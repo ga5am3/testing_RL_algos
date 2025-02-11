@@ -7,20 +7,28 @@ class BaseActor(nn.Module, ABC):
 
     @abstractmethod
     def forward(self, x):
+        """
+        foward pass of the actor, outputs mean and log_std of the action distribution
+        return: mean, log_std
+        """
         pass
 
     @abstractmethod
     def get_action(self, x):
+        """
+        return: action, log_prob, mean
+        """
+        # Forward pass
+
+        # Reparametrization trick
+
+        # Enforcing action bounds
+
         pass
 
-    @abstractmethod
-    def get_log_prob(self, x, action):
-        pass
-
-    @abstractmethod
-    def get_entropy(self, x):
-        pass
-    
+    # @abstractmethod
+    # def get_entropy(self, x):
+    #     pass
     @abstractmethod
     def weight_init(self, mean=0, std=1.0):
         pass

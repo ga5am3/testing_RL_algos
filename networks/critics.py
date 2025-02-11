@@ -36,6 +36,7 @@ class TwinQCritic(BaseCritic):
 
 
     def _initialize_weights(self):
+        # TODO: Implement Orthogonal Initialization
         for layer in list(self.q1) + list(self.q2):
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_uniform_(layer.weight)

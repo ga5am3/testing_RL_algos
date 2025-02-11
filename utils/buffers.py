@@ -10,7 +10,7 @@ class ReplayBuffer(ABC):
         self.max_size = max_size
 
     @abstractmethod
-    def add(self, state, action, reward, terminated, truncated, done):
+    def add(self, state, next_state, action, reward, terminated, truncated):
         pass
 
     @abstractmethod
@@ -22,6 +22,7 @@ class ReplayBuffer(ABC):
         pass
 
 class SimpleBuffer(ReplayBuffer):
+    # TODO: make it work with n-step returns
     def __init__(self, state_dim, action_dim, max_size):
         super().__init__(state_dim, action_dim, max_size)
         self.state = np.zeros((max_size, state_dim), dtype=np.float32)
@@ -34,7 +35,8 @@ class SimpleBuffer(ReplayBuffer):
         self.max_size = max_size
         self.ptr = 0
 
-    def add(self, state, action, reward, terminated, truncated, done):
+    def add(self, state, next_state, action, reward, terminated, truncated, done):
+        # TODO: add the next_state to the buffer
         self.state[self.ptr] = state
         self.action[self.ptr] = action
         self.reward[self.ptr] = reward
@@ -45,6 +47,7 @@ class SimpleBuffer(ReplayBuffer):
         self.size = min(self.size + 1, self.max_size)
 
     def sample(self, batch_size):
+        # TODO: fix to add Next state
         idx = np.random.randint(0, self.size, batch_size)
         return self.state[idx], self.action[idx], self.reward[idx], self.terminated[idx], self.truncated[idx], self.done[idx]
 
