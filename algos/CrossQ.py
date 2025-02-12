@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
-class SAC_Agent:
+class CrossQSAC_Agent:
     """
     Original Paper: https://arxiv.org/abs/1801.01290
     """
