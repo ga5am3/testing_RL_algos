@@ -39,7 +39,7 @@ class TwinQCritic(BaseCritic):
         # TODO: Implement Orthogonal Initialization
         for layer in list(self.q1) + list(self.q2):
             if isinstance(layer, nn.Linear):
-                nn.init.xavier_uniform_(layer.weight)
+                nn.init.orthogonal_(layer.weight)
                 nn.init.zeros_(layer.bias)
 
     def forward(self, state, action):

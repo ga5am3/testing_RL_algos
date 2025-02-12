@@ -5,6 +5,9 @@ from collections import deque, namedtuple
 import random
 
 class SimpleBuffer():
+    """
+    Simple Buffer to store experiences (state, action, reward, next_state, terminated, truncated)
+    """
     def __init__(self, max_size, batch_size, gamma, n_steps=1, seed=0):
         self.memory = deque(maxlen=max_size)
         self.batch_size = batch_size

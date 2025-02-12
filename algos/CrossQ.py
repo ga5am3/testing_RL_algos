@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from ..networks.actors import CrossQ_SAC_Actor
+from networks.actors import CrossQ_SAC_Actor
 import copy 
 
 class CrossQSAC_Agent:
@@ -112,8 +112,6 @@ class TD3_Agent:
         Rollout the agent in the environment
         """
         # Run policy in environment
-
-        
         
         pass
 
