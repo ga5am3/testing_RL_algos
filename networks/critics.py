@@ -99,14 +99,26 @@ class TwinQCritic(BaseCritic):
 #         x2 = self.shared_q2(x2)
 #         return x1, x2
 
-class CrossQCritic(TwinQCritic):
-    def __init__(self, state_dim, action_dim, hidden_sizes=[256, 256]):
-        super().__init__(state_dim, action_dim, hidden_sizes)
+def get_activation(activation_choice: str) -> nn.Module:
+    if activation_choice.lower() == "relu6":
+        return nn.ReLU6()
+    elif activation_choice.lower() == "tanh":
+        return nn.Tanh()
+    elif activation_choice.lower() == "elu":
+        return nn.ELU()
+    elif activation_choice.lower() == "relu":
+        return nn.ReLU()
+    else:
+        raise ValueError(f"Unsupported activation function: {activation_choice}")
 
+# Example usage:
+# activation = get_activation(user_choice)  # where user_choice is one of: "relu6", "tanh", "elu"
+class CrossQCritic(TwinQCritic):
+    def __init__(self, state_dim, action_dim, hidden_sizes=[256, 256], activation="tanh"):
+        super().__init__(state_dim, action_dim, hidden_sizes)
+        self.activation = get_activation(activation)
         momentum = 0.01
-        # ?? Idk if I should put the output size to be 2 or 1
-        # ?? I think it should be 2 because we are trying to predict the Q value for this time step and the next time step
-        # ?? And idk if I should use state_dim + action_dim or 2*state_dim + 2*action_dim or let whoever uses this class to decide 
+
         self.q1 = nn.Sequential(
             BatchRenorm(state_dim + action_dim, momentum=momentum),
             nn.Linear(state_dim + action_dim, hidden_sizes[0]),
