@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor
+from utils.buffers import SimpleBuffer
 import copy 
 
 class CrossQSAC_Agent:
@@ -88,6 +89,8 @@ class TD3_Agent:
         self.policy_freq = policy_freq # ???
         self.total_it = 0
         
+        self.replay_buffer = None
+        
         # define optimizers
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=3e-4)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=3e-4)
@@ -112,18 +115,45 @@ class TD3_Agent:
         Rollout the agent in the environment
         """
         # Run policy in environment
-        
-        pass
+        for _ in range(max_steps):
+            state = env.reset()
+            while not terminated or not truncated:
+                action = self.select_action(state)
+                next_state, reward, terminated, truncated, info = env.step(action)
+                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
+                state = next_state
 
-    def train(self, batch_size: int) -> None:
+    def train(self, env, max_steps, max_size, gamma, batch_size: int) -> None:
         """
         Train the agent
         """
         # rollout the agent in the environment
+        #TODO define a way to set the buffer
+        self.replay_buffer = SimpleBuffer(max_size, batch_size, gamma, n_steps=1, seed=0)
+        self.rollout(env, max_steps, eval=False)
+        
         # sample a batch from the replay buffer
-
+        state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
+        
         # convert everything to tensors
+        state_tensor = torch.FloatTensor(state).to(device)
+        next_state_tensor = torch.FloatTensor(next_state).to(device)
+        action_tensor = torch.FloatTensor(action).to(device)
+        reward_tensor = torch.FloatTensor(reward).to(device)    
+        terminated_tensor = torch.FloatTensor(terminated).to(device)
+        truncated_tensor = torch.FloatTensor(truncated).to(device)
+        
         # calculate the Q
+        self.critic.eval()
+        with torch.no_grad():
+            noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
+            next_action = (self.target_actor(next_state_tensor) + noise).clamp(-self.max_action, self.max_action)
+            target_Q1, target_Q2 = self.critic(next_state_tensor, next_action)
+            target_Q = torch.min(target_Q1, target_Q2)
+            target_Q = reward_tensor + (1 - terminated_tensor) * self.gamma * target_Q
+
+        current_Q1, current_Q2 = self.critic(state_tensor, action_tensor)
+        
         # calculate and update critic loss
 
         # log stuff
@@ -138,3 +168,4 @@ class TD3_Agent:
 
     def load(self, filename: str) -> None:
         pass
+    
