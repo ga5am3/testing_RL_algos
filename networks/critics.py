@@ -3,6 +3,8 @@ import torch.nn as nn
 
 from abc import ABC, abstractmethod
 
+# import sys
+# sys.path.append('/home/bbruno/Documents/testing_RL_algos/')
 from utils.utils import BatchRenorm
 
 class BaseCritic(nn.Module, ABC):
@@ -97,7 +99,7 @@ class TwinQCritic(BaseCritic):
 #         x2 = self.shared_q2(x2)
 #         return x1, x2
 
-class CrossQCritic(BaseCritic):
+class CrossQCritic(TwinQCritic):
     def __init__(self, state_dim, action_dim, hidden_sizes=[256, 256]):
         super().__init__(state_dim, action_dim, hidden_sizes)
 
@@ -113,7 +115,7 @@ class CrossQCritic(BaseCritic):
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
             nn.ReLU(),
             BatchRenorm(hidden_sizes[1], momentum=momentum),
-            nn.Linear(hidden_sizes[1], 2)
+            nn.Linear(hidden_sizes[1], 1)
         )
         self.q2 = nn.Sequential(
             BatchRenorm(state_dim + action_dim, momentum=momentum),
@@ -123,7 +125,7 @@ class CrossQCritic(BaseCritic):
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
             nn.ReLU(),
             BatchRenorm(hidden_sizes[1], momentum=momentum),
-            nn.Linear(hidden_sizes[1], 2)
+            nn.Linear(hidden_sizes[1], 1)
         )
         self._initialize_weights()
 
