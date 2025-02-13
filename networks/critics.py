@@ -101,18 +101,17 @@ class TwinQCritic(BaseCritic):
 
 def get_activation(activation_choice: str) -> nn.Module:
     if activation_choice.lower() == "relu6":
-        return nn.ReLU6()
+        return nn.ReLU6
     elif activation_choice.lower() == "tanh":
-        return nn.Tanh()
+        return nn.Tanh
     elif activation_choice.lower() == "elu":
-        return nn.ELU()
+        return nn.ELU
     elif activation_choice.lower() == "relu":
-        return nn.ReLU()
+        return nn.ReLU
     else:
         raise ValueError(f"Unsupported activation function: {activation_choice}")
 
 # Example usage:
-# activation = get_activation(user_choice)  # where user_choice is one of: "relu6", "tanh", "elu"
 class CrossQCritic(TwinQCritic):
     def __init__(self, state_dim, action_dim, hidden_sizes=[256, 256], activation="tanh"):
         super().__init__(state_dim, action_dim, hidden_sizes)
@@ -122,20 +121,20 @@ class CrossQCritic(TwinQCritic):
         self.q1 = nn.Sequential(
             BatchRenorm(state_dim + action_dim, momentum=momentum),
             nn.Linear(state_dim + action_dim, hidden_sizes[0]),
-            nn.ReLU(),
+            self.activation(),
             BatchRenorm(hidden_sizes[0], momentum=momentum),
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-            nn.ReLU(),
+            self.activation(),
             BatchRenorm(hidden_sizes[1], momentum=momentum),
             nn.Linear(hidden_sizes[1], 1)
         )
         self.q2 = nn.Sequential(
             BatchRenorm(state_dim + action_dim, momentum=momentum),
             nn.Linear(state_dim + action_dim, hidden_sizes[0]),
-            nn.ReLU(),
+            self.activation(),
             BatchRenorm(hidden_sizes[0], momentum=momentum),
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-            nn.ReLU(),
+            self.activation(),
             BatchRenorm(hidden_sizes[1], momentum=momentum),
             nn.Linear(hidden_sizes[1], 1)
         )
