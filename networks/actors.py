@@ -1,9 +1,8 @@
 import torch
 from torch import nn
 from abc import ABC, abstractmethod
-
-from utils.utils import BatchRenorm
 import gymnasium as gym
+from utils.utils import BatchRenorm
 class BaseActor(nn.Module, ABC):
     def __init__(self):
         super(BaseActor, self).__init__()
@@ -30,7 +29,12 @@ class BaseActor(nn.Module, ABC):
         pass
 
 class CrossQ_SAC_Actor(BaseActor):
-    def __init__(self, state_dim, action_dim, env, hidden_sizes=[256, 256], log_std_bounds=[-20.0, 2.0]):
+    def __init__(self, 
+                state_dim: int,
+                action_dim: int,
+                env: gym.Env,
+                hidden_sizes: list[int]=[256, 256],
+                log_std_bounds: list[float] =[-20.0, 2.0]):
         super().__init__()
         momentum = 0.1
         self.log_min, self.log_max = log_std_bounds
