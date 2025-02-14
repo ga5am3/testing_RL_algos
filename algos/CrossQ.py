@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor
+from networks.critics import CrossQCritic
 from utils.buffers import SimpleBuffer
 import copy 
 
@@ -64,6 +65,8 @@ class CrossQSAC_Agent:
         """
         pass
     
+def get_device():
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 class TD3_Agent:
     """
@@ -71,12 +74,15 @@ class TD3_Agent:
     """
     def __init__(self, state_dim: int, action_dim: int, 
                  actor_hidden_layers: list[int], critic_hidden_layers: list[int], 
-                 max_action, gamma=0.99, tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+                 actor_lr: float, critic_lr: float, max_action, device: str = None,
+                 gamma=0.99, tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+        
+        self.device = device if device is not None else get_device()
         
         # initialize the actor and critic networks
-        self.actor = Actor(state_dim, action_dim, actor_hidden_layers) #max_action (optionalto scale) .to(device)
+        self.actor = Actor(state_dim, action_dim, actor_hidden_layers).to(self.device)
         self.target_actor = copy.deepcopy(self.actor)
-        self.critic = Critic(state_dim + action_dim, 1, critic_hidden_layers)
+        self.critic = CrossQCritic(state_dim=state_dim, action_dim=action_dim, hidden_sizes=critic_hidden_layers, activation="tanh").to(self.device)
         
         self.target_actor.eval()
         
@@ -84,16 +90,16 @@ class TD3_Agent:
         self.max_action = max_action
         self.gamma = gamma
         self.tau = tau
-        self.policy_noise = policy_noise # ???
-        self.noise_clip = noise_clip # ???
-        self.policy_freq = policy_freq # ???
+        self.policy_noise = policy_noise
+        self.noise_clip = noise_clip
+        self.policy_freq = policy_freq
         self.total_it = 0
         
         self.replay_buffer = None
         
         # define optimizers
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=3e-4)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
 
 
     def select_action(self, states: torch.Tensor) -> torch.Tensor:
@@ -102,11 +108,10 @@ class TD3_Agent:
         output: actions (torch.Tensor)
         """
         # get the actions from the actor (no gradients)
-        self.actor.eval()
+        self.target_actor.eval()
         with torch.no_grad():
-            states = torch.FloatTensor(states).to(device)
-            action = self.actor(states).cpu().data.numpy().flatten()
-        
+            states = torch.FloatTensor(states).to(self.device)
+            action = self.target_actor(states).cpu().data.numpy().flatten()
         self.actor.train()
         return action
 
@@ -136,17 +141,17 @@ class TD3_Agent:
         state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
         
         # convert everything to tensors
-        state_tensor = torch.FloatTensor(state).to(device)
-        next_state_tensor = torch.FloatTensor(next_state).to(device)
-        action_tensor = torch.FloatTensor(action).to(device)
-        reward_tensor = torch.FloatTensor(reward).to(device)    
-        terminated_tensor = torch.FloatTensor(terminated).to(device)
-        truncated_tensor = torch.FloatTensor(truncated).to(device)
+        state_tensor = torch.FloatTensor(state).to(self.device)
+        next_state_tensor = torch.FloatTensor(next_state).to(self.device)
+        action_tensor = torch.FloatTensor(action).to(self.device)
+        reward_tensor = torch.FloatTensor(reward).to(self.device)    
+        terminated_tensor = torch.FloatTensor(terminated).to(self.device)
+        truncated_tensor = torch.FloatTensor(truncated).to(self.device)
         
         # calculate the Q
         self.critic.eval()
         with torch.no_grad():
-            noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
+            #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
             next_action = (self.target_actor(next_state_tensor) + noise).clamp(-self.max_action, self.max_action)
             target_Q1, target_Q2 = self.critic(next_state_tensor, next_action)
             target_Q = torch.min(target_Q1, target_Q2)
