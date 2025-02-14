@@ -55,7 +55,10 @@ class SimpleBuffer():
     def sample(self, batch_size):
         if batch_size is None:
             batch_size = self.batch_size
-        return random.sample(self.memory, k=batch_size)
+            
+        samples = random.sample(self.memory, k=batch_size)
+        states, actions, rewards, next_states, terminals, truncated = zip(*samples)
+        return states, actions, rewards, next_states, terminals, truncated
 
     def __len__(self):
         return self.size
