@@ -11,12 +11,47 @@ class CrossQSAC_Agent:
     """
     Original Paper: https://arxiv.org/abs/1801.01290
     """
-    def __init__(self, replay_buffer, state_dim, action_dim, hidden_sizes=[256, 256], lr=3e-4, gamma=0.99, tau=5e-3, alpha=0.2):
+    def __init__(self, env,
+                 actor_hidden_layers: list[int]=[256, 256],
+                 critic_hidden_layers: list[int]=[256, 256],
+                 actor_lr: float=3e-4, critic_lr: float = 3e-4, 
+                 max_action: float=1.0, device: str=None,
+                 gamma=0.99, tau=5e-3, policy_freq=2, 
+                 replay_buffer=None):
+        
+        self.env = env
+        self.learning_steps = 0
+        state_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.shape[0]
+
+        self.device = device if device is not None else get_device()
+
+        self.replay_buffer = None if replay_buffer is None else replay_buffer
         # initialize the actor and critic networks
-        # define parameters
+        self.actor = CrossQ_SAC_Actor(state_dim, 
+                                      action_dim, 
+                                      hidden_sizes=actor_hidden_layers).to(self.device)
+        self.critic = CrossQCritic(state_dim=state_dim, 
+                                   action_dim=action_dim, 
+                                   hidden_sizes=critic_hidden_layers, 
+                                   activation="tanh").to(self.device)
         # define optimizers
+        self.max_action = max_action
+        self.gamma = gamma
+        self.tau = tau
+        self.rewards_scale = 1.0
+        self.policy_update_freq = policy_freq
+
+        self.actor_net_optimizer = optim.Adam(self.actor.parameters(),
+                                                lr=actor_lr, betas=(0.5, 0.999))
+        self.critic_net_optimizer = optim.Adam(self.critic.parameters(),
+                                                lr=critic_lr, betas=(0.5, 0.999))
         # entropy tunner
-        pass
+        self.target_entropy = -torch.prod(torch.tensor(env.action_space.shape).to(self.device)) #TODO: check this 
+        init_temperature = 0.1
+        self.log_alpha = torch.tensor([np.log(init_temperature)], 
+                                      requires_grad=True).to(self.device)
+        self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr, betas=(0.5, 0.999))
 
     def select_action(self, states: torch.Tensor, eval: bool) -> torch.Tensor:
         """
@@ -24,6 +59,7 @@ class CrossQSAC_Agent:
         output: actions (torch.Tensor)
         """
         # get the actions from the actor (no gradients)
+        
         pass
 
     def rollout(self, env, max_steps: int, eval: bool) -> None:
@@ -34,24 +70,46 @@ class CrossQSAC_Agent:
 
         pass
 
-    def train(self, batch_size: int) -> None:
+    def train(self, batch_size: int, total_timesteps: int) -> None:
         """
         Train the agent
         """
-        # rollout the agent in the environment
-        # sample a batch from the replay buffer
+        # TODO: check how much to fill the replay buffer.
+        if len(self.replay_buffer) == 0:
+            self._do_random_actions(batch_size)
 
-        # convert everything to tensors
-        # calculate the Q
-        # calculate and update critic loss
+        for global_step in range(total_timesteps):
+            self.rollout(self.env, max_steps, eval=False) #TODO fix max_steps
 
-        # log stuff
+            # rollout the agent in the environment
+            # sample a batch from the replay buffer
+            experience = self.replay_buffer.sample(batch_size)
+            states, next_states, actions, rewards, dones = experience
 
-        # every N steps update the actor and entropy tuner
+            batch_size = len(states)
 
-        # update target networks
-        # update info
+            # convert everything to tensors
+            # calculate the Q
+            # calculate and update critic loss
+
+            # log stuff
+
+            # every N steps update the actor and entropy tuner
+
+            # update target networks
+            # update info
         pass
+
+    def _do_random_actions(self, batch_size: int) -> None:
+        actions = np.random.uniform(
+            -self.max_action,
+            self.max_action,
+            size=(batch_size, self.env.action_space.shape[0])
+        )
+        next_states, rewards, terminations, truncations, infos = self.env.step(actions)
+        real_next_obs = next_states
+        self.replay_buffer.add_batch(states, actions, rewards,
+                                     real_next_obs, terminations, truncations)
 
     def save(self, filename: str) -> None:
         """
@@ -173,4 +231,4 @@ class TD3_Agent:
 
     def load(self, filename: str) -> None:
         pass
-    
+

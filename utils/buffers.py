@@ -27,7 +27,8 @@ class SimpleBuffer():
         if len(self.n_step_buffer) == self.n_step:
             state, action, reward, next_state, terminated, truncated = self._calc_n_step_return(self.n_step_buffer)
             self.memory.append(self.experience(state, action, reward, next_state, terminated, truncated))
-
+        
+        # if the episode is done, we add the remaining transitions to the memory
         if done:
             while len(self.n_step_buffer):
                 state, action, reward, next_state, terminated, truncated = self._calc_n_step_return(len(self.n_step_buffer))
@@ -61,7 +62,7 @@ class SimpleBuffer():
         return states, actions, rewards, next_states, terminals, truncated
 
     def __len__(self):
-        return self.size
+        return len(self.memory)
     
 class PER_Buffer(SimpleBuffer):
     #TODO Implement the Prioritized Experience Replay Buffer
