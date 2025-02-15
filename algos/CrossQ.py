@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from networks.actors import CrossQ_SAC_Actor
+from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
 from networks.critics import CrossQCritic
 from utils.buffers import SimpleBuffer
 import copy 
@@ -80,8 +80,8 @@ class TD3_Agent:
         self.device = device if device is not None else get_device()
         
         # initialize the actor and critic networks
-        self.actor = Actor(state_dim, action_dim, actor_hidden_layers).to(self.device)
-        self.target_actor = copy.deepcopy(self.actor)
+        self.actor = Deterministic_Actor(state_dim, action_dim, actor_hidden_layers).to(self.device)
+        self.target_actor = copy.deepcopy(self.actor).to(self.device)
         self.critic = CrossQCritic(state_dim=state_dim, action_dim=action_dim, hidden_sizes=critic_hidden_layers, activation="tanh").to(self.device)
         
         self.target_actor.eval()
