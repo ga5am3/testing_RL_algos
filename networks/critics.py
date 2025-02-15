@@ -3,8 +3,6 @@ import torch.nn as nn
 
 from abc import ABC, abstractmethod
 
-# import sys
-# sys.path.append('/home/bbruno/Documents/testing_RL_algos/')
 from utils.utils import BatchRenorm
 
 class BaseCritic(nn.Module, ABC):
