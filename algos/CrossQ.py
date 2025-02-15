@@ -210,7 +210,7 @@ class TD3_Agent:
         # Run policy in environment
         for _ in range(max_steps):
             state = env.reset()
-            while not terminated or not truncated:
+            while not terminated or not truncated: #TODO: add behavior for truncated episodes
                 action = self.select_action(state, False) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
