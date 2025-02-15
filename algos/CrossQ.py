@@ -6,6 +6,7 @@ from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
 from networks.critics import CrossQCritic
 from utils.buffers import SimpleBuffer
 import copy 
+import gymnasium as gym
 
 class CrossQSAC_Agent:
     """
@@ -130,18 +131,31 @@ class TD3_Agent:
     """
     Original Paper: https://arxiv.org/abs/1802.09477v3
     """
-    def __init__(self, state_dim: int, action_dim: int, 
-                 actor_hidden_layers: list[int], critic_hidden_layers: list[int], 
-                 actor_lr: float, critic_lr: float, max_action, device: str = None,
-                 gamma=0.99, tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+    def __init__(self, env: gym.Env, 
+                 state_dim: int, 
+                 action_dim: int, 
+                 actor_hidden_layers: list[int], 
+                 critic_hidden_layers: list[int], 
+                 actor_lr: float, 
+                 critic_lr: float, 
+                 max_action, 
+                 device: str = None,
+                 gamma: float = 0.99, 
+                 tau: float = 0.005, 
+                 policy_noise: float = 0.2, 
+                 noise_clip=0.5, 
+                 exploration_noise: float = 0.1,
+                 policy_freq=2):
         
         self.device = device if device is not None else get_device()
+        self.action_dim = action_dim
         
         # initialize the actor and critic networks
-        self.actor = Deterministic_Actor(state_dim, action_dim, actor_hidden_layers).to(self.device)
+        self.actor = Deterministic_Actor(state_dim, action_dim, env, actor_hidden_layers).to(self.device)
         self.target_actor = copy.deepcopy(self.actor).to(self.device)
-        self.critic = CrossQCritic(state_dim=state_dim, action_dim=action_dim, hidden_sizes=critic_hidden_layers, activation="tanh").to(self.device)
+        self.critic = CrossQCritic(state_dim, action_dim, env, critic_hidden_layers, activation="tanh").to(self.device)
         
+        # Actor target netowrk is always used for evaluation only
         self.target_actor.eval()
         
         # define parameters
@@ -150,27 +164,43 @@ class TD3_Agent:
         self.tau = tau
         self.policy_noise = policy_noise
         self.noise_clip = noise_clip
-        self.policy_freq = policy_freq
-        self.total_it = 0
+        self.exploration_noise = exploration_noise
+        #self.policy_freq = policy_freq
+        #self.total_it = 0
         
-        self.replay_buffer = None
+        self.replay_buffer = None # TODO find a way to set a simple buffer or PER buffer
         
         # define optimizers
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
 
 
-    def select_action(self, states: torch.Tensor) -> torch.Tensor:
+    def select_action(self, state: torch.Tensor, train: bool) -> torch.Tensor:
         """
         input: states (torch.Tensor)
         output: actions (torch.Tensor)
         """
-        # get the actions from the actor (no gradients)
-        self.target_actor.eval()
-        with torch.no_grad():
-            states = torch.FloatTensor(states).to(self.device)
-            action = self.target_actor(states).cpu().data.numpy().flatten()
-        self.actor.train()
+        if train:
+            self.actor.eval()
+            with torch.no_grad():
+                state = torch.FloatTensor(state).to(self.device) # ? should I use torch.FloatTensor or just use the torch.Tensor type for state. 
+                action = self.actor(state).cpu().data.numpy().flatten()
+                noise = np.random.normal(0, self.max_action * self.exploration_noise, size=self.action_dim) # ? Do we get the max action from env?
+                action = action + noise
+                action = np.clip(action, -self.max_action, self.max_action)
+                action = torch.Tensor(action)
+            self.actor.train()
+            
+        else:
+            self.target_actor.eval()
+            with torch.no_grad():
+                state = torch.FloatTensor(state).to(self.device)
+                action = self.target_actor(state).cpu().data.numpy().flatten()
+                noise = torch.normal(0, self.policy_noise, size=self.action_dim).clamp(-self.noise_clip, self.noise_clip)
+                action = action + noise
+                action = action.clamp(-self.max_action, self.max_action)
+            self.target_actor.train()
+        
         return action
 
     def rollout(self, env, max_steps: int, eval: bool) -> None:
@@ -181,12 +211,12 @@ class TD3_Agent:
         for _ in range(max_steps):
             state = env.reset()
             while not terminated or not truncated:
-                action = self.select_action(state)
+                action = self.select_action(state, False) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
 
-    def train(self, env, max_steps, max_size, gamma, batch_size: int) -> None:
+    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps) -> None:
         """
         Train the agent
         """
@@ -195,28 +225,51 @@ class TD3_Agent:
         self.replay_buffer = SimpleBuffer(max_size, batch_size, gamma, n_steps=1, seed=0)
         self.rollout(env, max_steps, eval=False)
         
-        # sample a batch from the replay buffer
-        state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
+        ep_counter = 0
         
-        # convert everything to tensors
-        state_tensor = torch.FloatTensor(state).to(self.device)
-        next_state_tensor = torch.FloatTensor(next_state).to(self.device)
-        action_tensor = torch.FloatTensor(action).to(self.device)
-        reward_tensor = torch.FloatTensor(reward).to(self.device)    
-        terminated_tensor = torch.FloatTensor(terminated).to(self.device)
-        truncated_tensor = torch.FloatTensor(truncated).to(self.device)
+        for ep in range(train_episodes):
+            state = env.reset()
+            
+            while not terminated or not truncated:
+                action = self.select_action(state, train=True)
+                next_state, reward, terminated, truncated, info = env.step(action)
+                
+                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
+                
+                # Train 50 times every 50 steps
+                if ep_counter % train_steps == 0:                
+                    # sample a batch from the replay buffer
+                    state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
+            
+                    # convert everything to tensors
+                    state_tensor = torch.FloatTensor(state).to(self.device)
+                    next_state_tensor = torch.FloatTensor(next_state).to(self.device)
+                    action_tensor = torch.FloatTensor(action).to(self.device)
+                    reward_tensor = torch.FloatTensor(reward).to(self.device)    
+                    terminated_tensor = torch.tensor(terminated, dtype=torch.float32, device=self.device) # ? Are terminated and truncated boolean values?   
+                    truncated_tensor = torch.tensor(truncated, dtype=torch.float32, device=self.device) # ? do we need truncated values?
         
-        # calculate the Q
-        self.critic.eval()
-        with torch.no_grad():
-            #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
-            next_action = (self.target_actor(next_state_tensor) + noise).clamp(-self.max_action, self.max_action)
-            target_Q1, target_Q2 = self.critic(next_state_tensor, next_action)
-            target_Q = torch.min(target_Q1, target_Q2)
-            target_Q = reward_tensor + (1 - terminated_tensor) * self.gamma * target_Q
+                    # calculate the Q
+                    self.critic.eval()
+                    with torch.no_grad():
+                        #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
+                        next_action = self.select_action(next_state, train=False)
+                        state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                        action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                        q_vals_1, q_vals_2 = self.critic(state_next_state, action_next_action)
+                        q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
+                        q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
+                        target_q = torch.min(q_next_1, q_next_2)
+                        done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
+                        target_q = reward_tensor + (1 - done) * self.gamma * target_q
+                        
+                        
+                        
+                        target_Q = torch.min(target_Q1, target_Q2)
+                        target_Q = reward_tensor + (1 - terminated_tensor) * self.gamma * target_Q
 
-        current_Q1, current_Q2 = self.critic(state_tensor, action_tensor)
-        
+                    current_Q1, current_Q2 = self.critic(state_tensor, action_tensor)
+                    
         # calculate and update critic loss
 
         # log stuff
