@@ -185,7 +185,7 @@ class TD3_Agent:
             with torch.no_grad():
                 state = torch.FloatTensor(state).to(self.device) # ? should I use torch.FloatTensor or just use the torch.Tensor type for state. 
                 action = self.actor(state).cpu().data.numpy().flatten()
-                noise = np.random.normal(0, self.max_action * self.exploration_noise, size=self.action_dim) # ? Do we get the max action from env?
+                noise = torch.normal(0, self.max_action * self.exploration_noise, size=self.action_dim) # ? Do we get the max action from env?
                 action = action + noise
                 action = np.clip(action, -self.max_action, self.max_action)
                 action = torch.Tensor(action)
@@ -203,15 +203,17 @@ class TD3_Agent:
         
         return action
 
-    def rollout(self, env, max_steps: int, eval: bool) -> None:
+    def rollout(self, env, max_steps: int, train: bool) -> None:
         """
         Rollout the agent in the environment
         """
         # Run policy in environment
         for _ in range(max_steps):
             state = env.reset()
+            terminated = False
+            truncated = False
             while not terminated or not truncated: #TODO: add behavior for truncated episodes
-                action = self.select_action(state, False) # While rollouts the target actor is used
+                action = self.select_action(state, train) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
@@ -228,47 +230,36 @@ class TD3_Agent:
         ep_counter = 0
         
         for ep in range(train_episodes):
-            state = env.reset()
             
-            while not terminated or not truncated:
-                action = self.select_action(state, train=True)
-                next_state, reward, terminated, truncated, info = env.step(action)
-                
-                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
-                
-                # Train 50 times every 50 steps
-                if ep_counter % train_steps == 0:                
-                    # sample a batch from the replay buffer
-                    state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
-            
-                    # convert everything to tensors
-                    state_tensor = torch.FloatTensor(state).to(self.device)
-                    next_state_tensor = torch.FloatTensor(next_state).to(self.device)
-                    action_tensor = torch.FloatTensor(action).to(self.device)
-                    reward_tensor = torch.FloatTensor(reward).to(self.device)    
-                    terminated_tensor = torch.tensor(terminated, dtype=torch.float32, device=self.device) # ? Are terminated and truncated boolean values?   
-                    truncated_tensor = torch.tensor(truncated, dtype=torch.float32, device=self.device) # ? do we need truncated values?
-        
-                    # calculate the Q
-                    self.critic.eval()
-                    with torch.no_grad():
-                        #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
-                        next_action = self.select_action(next_state, train=False)
-                        state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
-                        action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
-                        q_vals_1, q_vals_2 = self.critic(state_next_state, action_next_action)
-                        q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
-                        q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
-                        target_q = torch.min(q_next_1, q_next_2)
-                        done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
-                        target_q = reward_tensor + (1 - done) * self.gamma * target_q
-                        
-                        
-                        
-                        target_Q = torch.min(target_Q1, target_Q2)
-                        target_Q = reward_tensor + (1 - terminated_tensor) * self.gamma * target_Q
+            self.rollout(env, max_steps, train=True)
 
-                    current_Q1, current_Q2 = self.critic(state_tensor, action_tensor)
+            # Train 50 times every 50 steps
+            if ep_counter % train_steps == 0:                
+                # sample a batch from the replay buffer
+                state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
+            
+                # convert everything to tensors
+                state_tensor = torch.FloatTensor(state).to(self.device)
+                next_state_tensor = torch.FloatTensor(next_state).to(self.device)
+                action_tensor = torch.FloatTensor(action).to(self.device)
+                reward_tensor = torch.FloatTensor(reward).to(self.device)    
+                terminated_tensor = torch.tensor(terminated, dtype=torch.float32, device=self.device) # ? Are terminated and truncated boolean values?   
+                truncated_tensor = torch.tensor(truncated, dtype=torch.float32, device=self.device) # ? do we need truncated values?
+        
+                # calculate the Q
+                self.critic.eval()
+                with torch.no_grad():
+                    #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
+                    next_action = self.select_action(next_state, train=False)
+                    state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                    action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                    q_vals_1, q_vals_2 = self.critic(state_next_state, action_next_action)
+                    q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
+                    q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
+                    target_q = torch.minimum(q_next_1, q_next_2)
+                    done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
+                    target_q = reward_tensor + (1 - done) * self.gamma * target_q
+
                     
         # calculate and update critic loss
 
