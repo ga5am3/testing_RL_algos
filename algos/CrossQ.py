@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.functional as F
 import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
@@ -22,6 +23,8 @@ class CrossQSAC_Agent:
         
         self.env = env
         self.learning_steps = 0
+        self.initial_training_steps = 1000 #TODO verify if these are steps or episodes
+        self.training_steps_per_rollout = 1 
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
 
@@ -54,52 +57,117 @@ class CrossQSAC_Agent:
                                       requires_grad=True).to(self.device)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr, betas=(0.5, 0.999))
 
-    def select_action(self, states: torch.Tensor, eval: bool) -> torch.Tensor:
+    #TODO: check if this is necessary
+    def select_action(self, states: torch.Tensor, train: bool) -> torch.Tensor:
         """
-        input: states (torch.Tensor)
-        output: actions (torch.Tensor)
+        input: state (torch.Tensor)
+        output: action (torch.Tensor)
         """
-        # get the actions from the actor (no gradients)
-        
-        pass
+        # get the action from the actor (no gradients)
+        self.actor.eval()
+        with torch.no_grad():
+            states = torch.FloatTensor(states).to(self.device)
+            states = states.unsqueeze(0)
+            if train:
+                action, _, _ = self.actor.get_action(states)
+            else:
+                _ , _, action = self.actor.get_action(states)
+            action = action.cpu().numpy().flatten()
+        self.actor.train()
+        return action
 
     def rollout(self, env, max_steps: int, eval: bool) -> None:
         """
         Rollout the agent in the environment
         """
         # Run policy in environment
+        for _ in range(max_steps):
+            state, _ = env.reset(seed=0) #TODO: make seed a parameter
+            termination = False
+            truncation = False
+            while not termination or not truncation:
+                action = self.select_action(state, eval).cpu().numpy()
+                next_state, reward, termination, truncation, infos = env.step(action)                
+                self.replay_buffer.add(state, next_state, action, reward, termination, truncation)
+                state = next_state  
 
-        pass
-
-    def train(self, batch_size: int, total_timesteps: int) -> None:
+    def train(self, batch_size: int, total_timesteps: int, save_freq: int = 1000) -> None:
         """
         Train the agent
         """
+
         # TODO: check how much to fill the replay buffer.
         if len(self.replay_buffer) == 0:
             self._do_random_actions(batch_size)
 
         for global_step in range(total_timesteps):
-            self.rollout(self.env, max_steps, eval=False) #TODO fix max_steps
-
+            self.rollout(self.env, self.initial_training_steps, eval=False) 
+            
             # rollout the agent in the environment
             # sample a batch from the replay buffer
-            experience = self.replay_buffer.sample(batch_size)
-            states, next_states, actions, rewards, dones = experience
+            for train_step in range(self.training_steps_per_rollout):
+                experience = self.replay_buffer.sample(batch_size)
+                states, next_states, actions, rewards, terminations, truncations = experience
+                states = torch.FloatTensor(states).to(self.device)
+                next_states = torch.FloatTensor(next_states).to(self.device)
+                actions = torch.FloatTensor(actions).to(self.device)
+                rewards = torch.FloatTensor(rewards).to(self.device)
+                terminations = torch.FloatTensor(terminations).to(self.device)
+                truncations = torch.FloatTensor(truncations).to(self.device)
 
-            batch_size = len(states)
+                # calculate the Q
+                with torch.no_grad():
+                    self.actor.eval()
+                    next_actions, log_probs, _ = self.actor.get_action(next_states)
+                    self.actor.train()
 
-            # convert everything to tensors
-            # calculate the Q
-            # calculate and update critic loss
+                cat_states = torch.cat([states, next_states], dim=0)
+                cat_actions = torch.cat([actions, next_actions], dim=0)
+                cat_q1, cat_q2 = self.critic(cat_states, cat_actions)
 
-            # log stuff
+                q_values_1, q_values_2 = torch.chunk(cat_q1, chunks=2, dim=0)
+                q_values_1_next, q_values_2_next = torch.chunk(cat_q2, chunks=2, dim=0)
 
-            # every N steps update the actor and entropy tuner
+                target_q_values = (torch.min(q_values_1_next, q_values_2_next) - self.alpha * log_probs)
+                
+                q_target = rewards * self.rewards_scale + self.gamma * (1 - terminations) * target_q_values
+                torch.detach(q_target)
 
-            # update target networks
-            # update info
-        pass
+                q1_loss = F.mse_loss(q_values_1, q_target)
+                q2_loss = F.mse_loss(q_values_2, q_target)
+                total_q_loss = q1_loss + q2_loss
+                
+                self.critic_net_optimizer.zero_grad()
+                total_q_loss.backward()
+                self.critic_net_optimizer.step()
+                # log actor loss, critic loss, entropy loss, alpha
+
+                if global_step % self.policy_update_freq == 0:
+                    # policy update
+                    next_actions, log_probs, _ = self.actor.get_action(states)
+                    
+                    self.critic.eval()
+                    q1, q2 = self.critic(states, next_actions)
+                    self.critic.train()
+
+                    min_q = torch.min(q1, q2)
+                    policy_loss = (self.alpha * log_probs - min_q).mean()
+
+                    self.actor_net_optimizer.zero_grad()
+                    policy_loss.backward()
+                    self.actor_net_optimizer.step()
+
+                    # temperature update
+                    entropy_loss = (self.alpha * (-log_probs - self.target_entropy).detach()).mean()
+                    self.alpha_optimizer.zero_grad()
+                    entropy_loss.backward()
+                    self.alpha_optimizer.step()
+
+                    # log actor loss, entropy loss
+
+                # Save the model checkpoint every save_freq training steps
+                if global_step % save_freq == 0 and global_step > 0:
+                    self.save(f"model_checkpoint_{global_step}.pt")
 
     def _do_random_actions(self, batch_size: int) -> None:
         actions = np.random.uniform(
@@ -107,22 +175,50 @@ class CrossQSAC_Agent:
             self.max_action,
             size=(batch_size, self.env.action_space.shape[0])
         )
-        next_states, rewards, terminations, truncations, infos = self.env.step(actions)
-        real_next_obs = next_states
-        self.replay_buffer.add_batch(states, actions, rewards,
-                                     real_next_obs, terminations, truncations)
+
+        states = self.env.reset(batch_size)
+        for i in range(batch_size):
+            state = self.env.reset()
+            while not terminated or not truncated: #TODO: add behavior for truncated episodes
+                action = actions[i] # While rollouts the target actor is used
+                next_state, reward, terminated, truncated, info = self.env.step(action)
+                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
+                state = next_state
 
     def save(self, filename: str) -> None:
         """
         Save the models in the agent
         """
-        pass
+        #TODO: Check if this is the correct way to save the models or whether to save actor and critic separately
+        state = {
+            'actor_state_dict': self.actor.state_dict(),
+            'critic_state_dict': self.critic.state_dict(),
+            'actor_optimizer_state_dict': self.actor_net_optimizer.state_dict(),
+            'critic_optimizer_state_dict': self.critic_net_optimizer.state_dict(),
+            'log_alpha': self.log_alpha,
+            'alpha_optimizer_state_dict': self.alpha_optimizer.state_dict(),
+            'max_action': self.max_action,
+            'gamma': self.gamma,
+            'tau': self.tau,
+            'policy_update_freq': self.policy_update_freq,
+        }
+        torch.save(state, filename)
 
     def load(self, filename: str) -> None:
         """
         Load the models in the agent
         """
-        pass
+        state = torch.load(filename)
+        self.actor.load_state_dict(state['actor_state_dict'])
+        self.critic.load_state_dict(state['critic_state_dict'])
+        self.actor_net_optimizer.load_state_dict(state['actor_optimizer_state_dict'])
+        self.critic_net_optimizer.load_state_dict(state['critic_optimizer_state_dict'])
+        self.log_alpha = state['log_alpha']
+        self.alpha_optimizer.load_state_dict(state['alpha_optimizer_state_dict'])
+        self.max_action = state['max_action']
+        self.gamma = state['gamma']
+        self.tau = state['tau']
+        self.policy_update_freq = state['policy_update_freq']
     
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
