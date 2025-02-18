@@ -223,7 +223,7 @@ class CrossQSAC_Agent:
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-class TD3_Agent:
+class CrossQTD3_Agent:
     """
     Original Paper: https://arxiv.org/abs/1802.09477v3
     """
