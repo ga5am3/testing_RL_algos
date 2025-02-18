@@ -76,3 +76,4 @@ class BatchRenorm(nn.Module):
 
         return x * self.weight.view(view_shape) + self.bias.view(view_shape)
 
+
