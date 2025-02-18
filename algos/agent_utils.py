@@ -7,17 +7,14 @@ class Base_Agent:
         self.max_action = max_action
         
     def _do_random_actions(self, batch_size: int) -> None:
-        actions = np.random.uniform(
-            -self.max_action,
-            self.max_action,
-            size=(batch_size, self.env.action_space.shape[0])
-        )
+        # Sample random actions depending on the type of action space
+        actions = np.array([self.env.action_space.sample() for _ in range(batch_size)])
 
-        states = self.env.reset(batch_size)
         for i in range(batch_size):
             state = self.env.reset()
-            while not terminated or not truncated: #TODO: add behavior for truncated episodes
-                action = actions[i] # While rollouts the target actor is used
+            terminated, truncated = False, False  
+            while not terminated and not truncated:  
+                action = actions[i]  # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
