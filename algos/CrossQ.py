@@ -9,8 +9,13 @@ from utils.buffers import SimpleBuffer
 import copy 
 import gymnasium as gym
 
-# Stuffs to do:
-
+# ------| Stuffs to do |-------
+# - Test _do_random_actions
+# - Test rollout
+# - Test sampling from the buffer
+# - Add Tensorboard logging and wandb logging
+# - test saving and loading
+# - verify both methods are interchangable
 class CrossQSAC_Agent:
     """
     Original Paper: https://arxiv.org/abs/1801.01290
@@ -36,6 +41,7 @@ class CrossQSAC_Agent:
         # initialize the actor and critic networks
         self.actor = CrossQ_SAC_Actor(state_dim, 
                                       action_dim, 
+                                      env=env,
                                       hidden_sizes=actor_hidden_layers).to(self.device)
         self.critic = CrossQCritic(state_dim=state_dim, 
                                    action_dim=action_dim, 
@@ -55,8 +61,7 @@ class CrossQSAC_Agent:
         # entropy tunner
         self.target_entropy = -torch.prod(torch.tensor(env.action_space.shape).to(self.device)) #TODO: check this 
         init_temperature = 0.1
-        self.log_alpha = torch.tensor([np.log(init_temperature)], 
-                                      requires_grad=True).to(self.device)
+        self.log_alpha = torch.tensor([np.log(init_temperature)], requires_grad=True, device=self.device)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr, betas=(0.5, 0.999))
 
     #TODO: check if this is necessary
@@ -78,20 +83,27 @@ class CrossQSAC_Agent:
         self.actor.train()
         return action
 
-    def rollout(self, env, max_steps: int, eval: bool) -> None:
+    def rollout(self, env, episodes: int, eval: bool) -> None:
         """
         Rollout the agent in the environment
         """
         # Run policy in environment
-        for _ in range(max_steps):
+        for _ in range(episodes):
+            print("====================================")
+            print("Rollout step ", _)
             state, _ = env.reset(seed=0) #TODO: make seed a parameter
             termination = False
             truncation = False
-            while not termination or not truncation:
+            # steps = 0
+            while ((not termination) and (not truncation)):
                 action = self.select_action(state, eval).cpu().numpy()
                 next_state, reward, termination, truncation, infos = env.step(action)                
                 self.replay_buffer.add(state, next_state, action, reward, termination, truncation)
                 state = next_state  
+                print("State: ", state) 
+                print("Termination: ", termination)
+                print("Truncation: ", truncation)
+                # steps += 1
 
     def train(self, batch_size: int, total_timesteps: int, save_freq: int = 1000) -> None:
         """
@@ -172,17 +184,14 @@ class CrossQSAC_Agent:
                     self.save(f"model_checkpoint_{global_step}.pt")
 
     def _do_random_actions(self, batch_size: int) -> None:
-        actions = np.random.uniform(
-            -self.max_action,
-            self.max_action,
-            size=(batch_size, self.env.action_space.shape[0])
-        )
+        # Sample random actions depending on the type of action space
+        actions = np.array([self.env.action_space.sample() for _ in range(batch_size)])
 
-        states = self.env.reset(batch_size)
         for i in range(batch_size):
             state = self.env.reset()
-            while not terminated or not truncated: #TODO: add behavior for truncated episodes
-                action = actions[i] # While rollouts the target actor is used
+            terminated, truncated = False, False  
+            while not terminated and not truncated:  
+                action = actions[i]  # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state

@@ -31,26 +31,26 @@ class SimpleBuffer():
         # if the episode is done, we add the remaining transitions to the memory
         if done:
             while len(self.n_step_buffer):
-                state, action, reward, next_state, terminated, truncated = self._calc_n_step_return(len(self.n_step_buffer))
+                state, action, reward, next_state, terminated, truncated = self._calc_n_step_return(self.n_step_buffer)
                 self.memory.append(self.experience(state, action, reward, next_state, terminated, truncated))
                 self.n_step_buffer.popleft()        
-
 
     def _calc_n_step_return(self, buffer):
         R = 0.0
 
         for idx, transition in enumerate(buffer):
-            _, _, reward, _, te, tr = transition
+            _, _, reward, _, terminated, truncated = transition
             R += reward * (self.gamma ** idx)
-            if te or tr:
+            if terminated or truncated:
                 break
         
         s = buffer[0][0]
         a = buffer[0][1]
-        # next state is the last state in the buffer
+        # next state is from the last accumulated transition
         ns = buffer[idx][3]
-        d = buffer[idx][4]
-        return s, a, R, ns, d
+        te = buffer[idx][4]
+        tr = buffer[idx][5]
+        return s, a, R, ns, te, tr
 
 
     def sample(self, batch_size):

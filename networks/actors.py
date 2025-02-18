@@ -54,8 +54,8 @@ class CrossQ_SAC_Actor(BaseActor):
 
         self._initialize_weights()
         # TODO: check this part (single action space is not defined in not vectorized envs)
-        self.register_buffer("action_scale", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
-        self.register_buffer("action_bias", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
+        self.register_buffer("action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
+        self.register_buffer("action_bias", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
 
     def _initialize_weights(self):
         for layer in list(self.actor_net) + [self.mean, self.log_std]:
