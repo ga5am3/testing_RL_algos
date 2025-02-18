@@ -9,6 +9,8 @@ from utils.buffers import SimpleBuffer
 import copy 
 import gymnasium as gym
 
+# Stuffs to do:
+
 class CrossQSAC_Agent:
     """
     Original Paper: https://arxiv.org/abs/1801.01290
@@ -223,7 +225,7 @@ class CrossQSAC_Agent:
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-class CrossQTD3_Agent:
+class TD3_Agent:
     """
     Original Paper: https://arxiv.org/abs/1802.09477v3
     """
@@ -353,7 +355,8 @@ class CrossQTD3_Agent:
                     q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
                     q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
                     target_q = torch.minimum(q_next_1, q_next_2)
-                    target_q = reward_tensor + (1 - terminated_tensor) * self.gamma * target_q
+                    done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
+                    target_q = reward_tensor + (1 - done) * self.gamma * target_q
 
                     
         # calculate and update critic loss

@@ -94,3 +94,42 @@ class CrossQ_SAC_Actor(BaseActor):
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
 
         return action, log_prob, mean
+    
+# sorry gabriel, deleted it on accident
+class Deterministic_Actor(BaseActor):
+    def __init__(self,
+                state_dim: int,
+                action_dim: int,
+                env: gym.Env,
+                hidden_sizes: list[int]=[256, 256]):
+        super().__init__()
+
+        momentum = 0.1  
+        self.actor_net = nn.Sequential(
+            BatchRenorm(state_dim, momentum=momentum),
+            nn.Linear(state_dim, hidden_sizes[0]),
+            nn.ReLU(),
+            BatchRenorm(hidden_sizes[0], momentum=momentum),
+            nn.Linear(hidden_sizes[0], hidden_sizes[1]),
+            nn.ReLU(),
+            BatchRenorm(hidden_sizes[1], momentum=momentum),
+            nn.Linear(hidden_sizes[1], action_dim)
+        )
+
+        self._initialize_weights()
+
+        self.register_buffer("action_scale", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
+        self.register_buffer("action_bias", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
+
+    def _initialize_weights(self):
+        for layer in list(self.actor_net) + [self.mean]:
+            if isinstance(layer, nn.Linear):
+                nn.init.orthogonal_(layer.weight)
+                nn.init.zeros_(layer.bias)
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        x = self.actor_net(state)
+        return x * self.action_scale + self.action_bias
+
+    def get_action(self, state: torch.Tensor) -> torch.Tensor:
+        return self.forward(state)
