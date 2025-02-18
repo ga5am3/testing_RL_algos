@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
 from networks.critics import CrossQCritic
+from agent_utils import Base_Agent
 from utils.buffers import SimpleBuffer
 import copy 
 import gymnasium as gym
@@ -16,7 +17,7 @@ import gymnasium as gym
 # - Add Tensorboard logging and wandb logging
 # - test saving and loading
 # - verify both methods are interchangable
-class CrossQSAC_Agent:
+class CrossQSAC_Agent(Base_Agent):
     """
     Original Paper: https://arxiv.org/abs/1801.01290
     """
@@ -183,19 +184,6 @@ class CrossQSAC_Agent:
                 if global_step % save_freq == 0 and global_step > 0:
                     self.save(f"model_checkpoint_{global_step}.pt")
 
-    def _do_random_actions(self, batch_size: int) -> None:
-        # Sample random actions depending on the type of action space
-        actions = np.array([self.env.action_space.sample() for _ in range(batch_size)])
-
-        for i in range(batch_size):
-            state = self.env.reset()
-            terminated, truncated = False, False  
-            while not terminated and not truncated:  
-                action = actions[i]  # While rollouts the target actor is used
-                next_state, reward, terminated, truncated, info = self.env.step(action)
-                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
-                state = next_state
-
     def save(self, filename: str) -> None:
         """
         Save the models in the agent
@@ -234,7 +222,7 @@ class CrossQSAC_Agent:
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-class TD3_Agent:
+class CrossQTD3_Agent(Base_Agent):
     """
     Original Paper: https://arxiv.org/abs/1802.09477v3
     """
@@ -252,7 +240,7 @@ class TD3_Agent:
                  policy_noise: float = 0.2, 
                  noise_clip=0.5, 
                  exploration_noise: float = 0.1,
-                 policy_freq=2):
+                 policy_freq_update=2):
         
         self.device = device if device is not None else get_device()
         self.action_dim = action_dim
@@ -272,7 +260,7 @@ class TD3_Agent:
         self.policy_noise = policy_noise
         self.noise_clip = noise_clip
         self.exploration_noise = exploration_noise
-        #self.policy_freq = policy_freq
+        self.policy_freq_update = policy_freq_update
         #self.total_it = 0
         
         self.replay_buffer = None # TODO find a way to set a simple buffer or PER buffer
@@ -319,13 +307,13 @@ class TD3_Agent:
             state = env.reset()
             terminated = False
             truncated = False
-            while not terminated or not truncated: #TODO: add behavior for truncated episodes
+            while not terminated and not truncated: #TODO: add behavior for truncated episodes
                 action = self.select_action(state, train) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
 
-    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps) -> None:
+    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
         """
         Train the agent
         """
@@ -339,9 +327,11 @@ class TD3_Agent:
         for ep in range(train_episodes):
             
             self.rollout(env, max_steps, train=True)
+            
+            for train_step in range(train_steps_per_rollout):
 
-            # Train 50 times every 50 steps
-            if ep_counter % train_steps == 0:                
+                # Train 50 times every 50 steps
+                #if ep_counter % train_steps == 0:                
                 # sample a batch from the replay buffer
                 state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
             
@@ -358,28 +348,69 @@ class TD3_Agent:
                 with torch.no_grad():
                     #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
                     next_action = self.select_action(next_state, train=False)
-                    state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
-                    action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
-                    q_vals_1, q_vals_2 = self.critic(state_next_state, action_next_action)
-                    q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
-                    q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
-                    target_q = torch.minimum(q_next_1, q_next_2)
-                    done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
-                    target_q = reward_tensor + (1 - done) * self.gamma * target_q
+                
+                state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
+                q_vals_1, q_vals_2 = self.critic(state_next_state, action_next_action)
+                q_curr_1, q_next_1 = torch.chunk(q_vals_1, chunks=2, dim=0)
+                q_curr_2, q_next_2 = torch.chunk(q_vals_2, chunks=2, dim=0)
+                target_q = torch.minimum(q_next_1, q_next_2)
+                done = terminated_tensor if terminated_tensor.item() == 1 else torch.tensor(0, dtype=torch.float32)
+                target_q = reward_tensor + (1 - done) * self.gamma * target_q
+                        
+                # calculate and update critic loss
+                torch.detach(target_q)
 
+                critic_loss_1 = F.mse_loss(q_curr_1, target_q)
+                critic_loss_2 = F.mse_loss(q_curr_2, target_q)
+
+                total_critic_loss = critic_loss_1 + critic_loss_2
+
+                self.critic_optimizer.zero_grad()
+                total_critic_loss.backward()
+                self.critic_optimizer.step()
+                
+                # every N steps update the actor
+                if ep % self.policy_freq_update == 0:
+                    n_action = self.select_action(state_tensor, train=False)
+                    self.critic.eval()
+                    with torch.no_grad():
+                        q_values_1, q_values_2 = self.critic(state_tensor, n_action)
+                    min_q_value = torch.minimum(q_values_1, q_values_2)
+                    actor_loss = -min_q_value.mean()
+                    self.critic.train()
+                    self.actor_optimizer.zero_grad()
+                    actor_loss.backward()       
+                    self.actor_optimizer.step()
                     
-        # calculate and update critic loss
+                    # update target networks
+                    for actor_param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
+                        target_param.data.copy_(self.tau * actor_param.data + (1 - self.tau) * target_param.data)
 
-        # log stuff
+            # log stuff
 
-        # every N steps update the actor 
-
-        # update target networks
-        # update info
+            # update info
 
     def save(self, filename: str) -> None:
-        pass
+        models = {
+            'actor_state_dict': self.actor.state_dict(),
+            'critic_state_dict': self.critic.state_dict(),
+            'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
+            'critic_optimizer_state_dict': self.critic_optimizer.state_dict(),
+            'max_action': self.max_action,
+            'gamma': self.gamma,
+            'tau': self.tau,
+            'policy_update_freq': self.policy_update_freq,
+        }
+        torch.save(models, filename)
 
     def load(self, filename: str) -> None:
-        pass
+        models = torch.load(filename)
+        self.actor.load_state_dict(models['actor_state_dict'])
+        self.critic.load_state_dict(models['critic_state_dict'])
+        self.actor_optimizer.load_state_dict(models['actor_optimizer_state_dict'])
+        self.critic_optimizer.load_state_dict(models['critic_optimizer_state_dict'])
+        self.max_action = models['max_action']
+        self.gamma = models['gamma']
+        self.tau = models['tau']
 
