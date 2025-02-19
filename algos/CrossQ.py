@@ -5,7 +5,7 @@ import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
 from networks.critics import CrossQCritic
-from agent_utils import Base_Agent
+from algos.agent_utils import Base_Agent
 from utils.buffers import SimpleBuffer
 import copy 
 import gymnasium as gym
@@ -40,6 +40,7 @@ class CrossQSAC_Agent(Base_Agent):
 
         self.replay_buffer = None if replay_buffer is None else replay_buffer
         # initialize the actor and critic networks
+        # - send high and low action values as parameters instead of the env
         self.actor = CrossQ_SAC_Actor(state_dim, 
                                       action_dim, 
                                       env=env,
@@ -219,6 +220,7 @@ class CrossQSAC_Agent(Base_Agent):
         self.tau = state['tau']
         self.policy_update_freq = state['policy_update_freq']
     
+# - Implement this function inside Base_Agent class
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
