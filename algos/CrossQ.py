@@ -371,7 +371,7 @@ class CrossQTD3_Agent(Base_Agent):
                     "rollout/episode_reward": total_ep_reward
                 })
 
-    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
+    def train(self, max_steps: int, batch_size: int, train_episodes: int, train_steps_per_rollout: int, save_freq: int) -> None:
         """
         Train the agent
         """
