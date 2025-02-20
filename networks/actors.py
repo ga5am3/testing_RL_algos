@@ -118,11 +118,11 @@ class Deterministic_Actor(BaseActor):
 
         self._initialize_weights()
 
-        self.register_buffer("action_scale", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
-        self.register_buffer("action_bias", torch.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0))
+        self.register_buffer("action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
+        self.register_buffer("action_bias", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
 
     def _initialize_weights(self):
-        for layer in list(self.actor_net) + [self.mean]:
+        for layer in list(self.actor_net):
             if isinstance(layer, nn.Linear):
                 nn.init.orthogonal_(layer.weight)
                 nn.init.zeros_(layer.bias)
