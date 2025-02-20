@@ -2,16 +2,15 @@ import torch
 import numpy as np
 
 class Base_Agent:
-    def __init__(self, env, replay_buffer, max_action):
+    def __init__(self, env, replay_buffer):
         self.env = env
         self.replay_buffer = replay_buffer
-        self.max_action = max_action
         
-    def _do_random_actions(self, batch_size: int) -> None:
+    def _do_random_actions(self, initial_steps: int) -> None:
         # Sample random actions depending on the type of action space
-        actions = np.array([self.env.action_space.sample() for _ in range(batch_size)])
+        actions = np.array([self.env.action_space.sample() for _ in range(initial_steps)])
 
-        for i in range(batch_size):
+        for i in range(initial_steps):
             state = self.env.reset()
             terminated, truncated = False, False  
             while not terminated and not truncated:  

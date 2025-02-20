@@ -36,7 +36,7 @@ class CrossQ_SAC_Actor(BaseActor):
                 hidden_sizes: list[int]=[256, 256],
                 log_std_bounds: list[float] =[-20.0, 2.0]):
         super().__init__()
-        momentum = 0.1
+        momentum = 0.01
         self.log_min, self.log_max = log_std_bounds
 
         self.actor_net = nn.Sequential(

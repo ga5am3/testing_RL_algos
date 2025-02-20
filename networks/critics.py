@@ -110,7 +110,7 @@ def get_activation(activation_choice: str) -> nn.Module:
 
 # Example usage:
 class CrossQCritic(TwinQCritic):
-    def __init__(self, state_dim, action_dim, hidden_sizes=[256, 256], activation="tanh"):
+    def __init__(self, state_dim, action_dim, hidden_sizes=[512, 512], activation="tanh"):
         super().__init__(state_dim, action_dim, hidden_sizes)
         self.activation = get_activation(activation)
         momentum = 0.01
