@@ -10,10 +10,15 @@ from utils.buffers import SimpleBuffer
 import copy 
 import gymnasium as gym
 
+from tensorboardX import SummaryWriter
+import wandb
+
+#wandb.init(sync_tensorboard=True)
+#wandb.tensorboard.patch(root_logdir="logs")
+
+log_dir = "logs" #TODO: change this later to work with config
+
 # ------| Stuffs to do |-------
-# - Test _do_random_actions
-# - Test rollout
-# - Test sampling from the buffer
 # - Add Tensorboard logging and wandb logging
 # - test saving and loading
 # - verify both methods are interchangable
@@ -27,7 +32,7 @@ class CrossQSAC_Agent(Base_Agent):
                  actor_lr: float=3e-4, critic_lr: float = 3e-4, 
                  max_action: float=1.0, device: str=None,
                  gamma=0.99, tau=5e-3, policy_freq=2, 
-                 replay_buffer=None):
+                 replay_buffer=None, use_wandb=False):
         
         self.env = env
         self.learning_steps = 0
@@ -67,6 +72,22 @@ class CrossQSAC_Agent(Base_Agent):
         self.log_alpha = torch.tensor([np.log(init_temperature)], requires_grad=True, device=self.device)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr, betas=(0.5, 0.999))
 
+        if use_wandb: #TODO: this should be in the main file
+            wandb.init(
+                project="crossq_project", # set this from config file
+                config={
+                    "actor_hidden_layers": actor_hidden_layers,
+                    "critic_hidden_layers": critic_hidden_layers,
+                    "actor_lr": actor_lr,
+                    "critic_lr": critic_lr,
+                    "max_action": max_action,
+                    "gamma": gamma,
+                    "tau": tau,
+                    "policy_freq": policy_freq,
+                }
+            )
+
+
     #TODO: check if this is necessary
     def select_action(self, states: torch.Tensor, train: bool) -> torch.Tensor:
         """
@@ -92,7 +113,7 @@ class CrossQSAC_Agent(Base_Agent):
         """
         # Run policy in environment
         for _ in range(episodes):
-            print("====================================")
+            #print("====================================")
             print("Rollout step ", _)
             state, _ = env.reset(seed=0) #TODO: make seed a parameter
             termination = False
@@ -103,9 +124,9 @@ class CrossQSAC_Agent(Base_Agent):
                 next_state, reward, termination, truncation, infos = env.step(action)                
                 self.replay_buffer.add(state, next_state, action, reward, termination, truncation)
                 state = next_state  
-                print("State: ", state) 
-                print("Termination: ", termination)
-                print("Truncation: ", truncation)
+                #print("State: ", state) 
+                #print("Termination: ", termination)
+                #print("Truncation: ", truncation)
                 # steps += 1
 
     def train(self, batch_size: int, total_timesteps: int, save_freq: int = 1000) -> None:
@@ -158,6 +179,17 @@ class CrossQSAC_Agent(Base_Agent):
                 total_q_loss.backward()
                 self.critic_net_optimizer.step()
                 # log actor loss, critic loss, entropy loss, alpha
+                
+                # Compute gradient and do optimizer step logging #! might remove this
+                critic_grad_norm = sum([p.grad.data.norm(2).item() ** 2 for p in self.critic.parameters()]) ** 0.5
+
+                if self.use_wandb:
+                    wandb.log({
+                        "critic_loss": total_q_loss,
+                        "entropy_loss": entropy_loss,
+                        "critic_grad_norm": critic_grad_norm,
+                        "train_step": global_step
+                    })
 
                 if global_step % self.policy_update_freq == 0:
                     # policy update
@@ -181,6 +213,13 @@ class CrossQSAC_Agent(Base_Agent):
                     self.alpha_optimizer.step()
 
                     # log actor loss, entropy loss
+                    if self.use_wandb:
+                        wandb.log({
+                            "actor_loss": policy_loss,
+                            "entropy_loss": entropy_loss,
+                            "alpha": self.alpha,
+                            "log_probs": log_probs,
+                        })
 
                 # Save the model checkpoint every save_freq training steps
                 if global_step % save_freq == 0 and global_step > 0:
@@ -309,7 +348,25 @@ class CrossQTD3_Agent(Base_Agent):
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
 
+<<<<<<< Updated upstream
     def train(self, max_steps: int, batch_size: int, train_episodes: int, train_steps_per_rollout: int) -> None:
+=======
+                # update episode statistics
+                steps += 1
+                avg_episode_reward += reward
+    
+            print(f"Episode finished in {steps} steps with Average Reward = {avg_episode_reward:.2f}")
+            if self.use_wandb:
+                wandb.log({
+                    "rollout/episode_steps": steps,
+                    "rollout/episode_reward": avg_episode_reward
+                })
+            # reset stats for the next episode
+            steps = 0
+            avg_episode_reward = 0
+
+    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
+>>>>>>> Stashed changes
         """
         Train the agent
         """
