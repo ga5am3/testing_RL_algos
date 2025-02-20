@@ -285,7 +285,7 @@ class CrossQTD3_Agent(Base_Agent):
         # initialize the actor and critic networks
         self.actor = Deterministic_Actor(state_dim, action_dim, env, actor_hidden_layers).to(self.device)
         self.target_actor = copy.deepcopy(self.actor).to(self.device)
-        self.critic = CrossQCritic(state_dim, action_dim, env, critic_hidden_layers, activation="tanh").to(self.device)
+        self.critic = CrossQCritic(state_dim, action_dim, critic_hidden_layers, activation="tanh").to(self.device)
         
         # Actor target netowrk is always used for evaluation only
         self.target_actor.eval()
@@ -443,10 +443,12 @@ class CrossQTD3_Agent(Base_Agent):
             'critic_state_dict': self.critic.state_dict(),
             'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
             'critic_optimizer_state_dict': self.critic_optimizer.state_dict(),
-            'max_action': self.max_action,
             'gamma': self.gamma,
             'tau': self.tau,
-            'policy_update_freq': self.policy_update_freq,
+            'policy_noise': self.policy_noise,
+            'noise_clip': self.noise_clip,
+            'exploration_noise': self.exploration_noise,
+            'policy_update_freq': self.policy_freq_update,
         }
         torch.save(models, filename)
 
@@ -456,7 +458,11 @@ class CrossQTD3_Agent(Base_Agent):
         self.critic.load_state_dict(models['critic_state_dict'])
         self.actor_optimizer.load_state_dict(models['actor_optimizer_state_dict'])
         self.critic_optimizer.load_state_dict(models['critic_optimizer_state_dict'])
-        self.max_action = models['max_action']
         self.gamma = models['gamma']
         self.tau = models['tau']
+        self.policy_noise = models['policy_noise']
+        self.noise_clip = models['noise_clip']
+        self.exploration_noise = models['exploration_noise']
+        self.policy_freq_update = models['policy_update_freq']
+        
 

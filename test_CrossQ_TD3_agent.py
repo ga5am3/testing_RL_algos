@@ -16,3 +16,5 @@ if __name__ == "__main__":
     print("Stored transitions:", len(buffer))
 
     agent = CrossQTD3_Agent(env, replay_buffer=buffer)
+    agent.save('/home/gabrielga/Gabo/barn/testing_RL_algos/CrossQTD3_Agent.pth')
+    agent.load('/home/gabrielga/Gabo/barn/testing_RL_algos/CrossQTD3_Agent.pth')
