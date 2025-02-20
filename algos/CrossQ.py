@@ -348,9 +348,6 @@ class CrossQTD3_Agent(Base_Agent):
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
 
-<<<<<<< Updated upstream
-    def train(self, max_steps: int, batch_size: int, train_episodes: int, train_steps_per_rollout: int) -> None:
-=======
                 # update episode statistics
                 steps += 1
                 avg_episode_reward += reward
@@ -366,7 +363,6 @@ class CrossQTD3_Agent(Base_Agent):
             avg_episode_reward = 0
 
     def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
->>>>>>> Stashed changes
         """
         Train the agent
         """
