@@ -146,7 +146,11 @@ class CrossQSAC_Agent(Base_Agent):
             self._do_random_actions(batch_size)
 
         for global_step in range(total_timesteps):
-            self.rollout(self.env, self.initial_training_steps, eval=False) 
+            
+            if len(self.replay_buffer) == 0:
+                self._do_random_actions(batch_size)
+            else:
+                self.rollout(total_timesteps, train=True)
             
             # rollout the agent in the environment
             # sample a batch from the replay buffer
@@ -376,12 +380,12 @@ class CrossQTD3_Agent(Base_Agent):
         Train the agent
         """
         
-        if len(self.replay_buffer) == 0:
-            self._do_random_actions(batch_size)
-        
         for global_step in range(train_episodes):
             
-            self.rollout(max_steps, train=True)
+            if len(self.replay_buffer) == 0:
+                self._do_random_actions(batch_size)
+            else:
+                self.rollout(max_steps, train=True)
             
             for _ in range(train_steps_per_rollout):
 
