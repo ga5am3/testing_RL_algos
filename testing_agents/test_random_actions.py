@@ -49,11 +49,11 @@ def test_experience(agent):
         print("Error while sampling experience:", e)    
 
 if __name__ == "__main__":
+    
     # Dummy replay buffer for testing purposes
     env = gym.make('Pendulum-v1')
     max_action = 1.0  # adjust based on your env's action space
     batch_size = 2
-
 
     buffer = SimpleBuffer(max_size=1500, batch_size=32, gamma=0.99, n_steps=10, seed=0)
     #do_random_actions(env, buffer, max_action, batch_size)

@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 class Base_Agent:
@@ -18,4 +19,7 @@ class Base_Agent:
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
+                
+    def get_device(self):
+        return "cuda" if torch.cuda.is_available() else "cpu"
     

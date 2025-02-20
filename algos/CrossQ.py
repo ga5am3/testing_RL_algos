@@ -21,7 +21,7 @@ class CrossQSAC_Agent(Base_Agent):
     """
     Original Paper: https://arxiv.org/abs/1801.01290
     """
-    def __init__(self, env,
+    def __init__(self, env: gym.Env,
                  actor_hidden_layers: list[int]=[256, 256],
                  critic_hidden_layers: list[int]=[256, 256],
                  actor_lr: float=3e-4, critic_lr: float = 3e-4, 
@@ -36,7 +36,7 @@ class CrossQSAC_Agent(Base_Agent):
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
 
-        self.device = device if device is not None else get_device()
+        self.device = device if device is not None else self.get_device()
 
         self.replay_buffer = None if replay_buffer is None else replay_buffer
         # initialize the actor and critic networks
@@ -45,6 +45,7 @@ class CrossQSAC_Agent(Base_Agent):
                                       action_dim, 
                                       env=env,
                                       hidden_sizes=actor_hidden_layers).to(self.device)
+        
         self.critic = CrossQCritic(state_dim=state_dim, 
                                    action_dim=action_dim, 
                                    hidden_sizes=critic_hidden_layers, 
@@ -219,33 +220,28 @@ class CrossQSAC_Agent(Base_Agent):
         self.gamma = state['gamma']
         self.tau = state['tau']
         self.policy_update_freq = state['policy_update_freq']
-    
-# - Implement this function inside Base_Agent class
-def get_device():
-    return "cuda" if torch.cuda.is_available() else "cpu"
 
 class CrossQTD3_Agent(Base_Agent):
     """
     Original Paper: https://arxiv.org/abs/1802.09477v3
     """
     def __init__(self, env: gym.Env, 
-                 state_dim: int, 
-                 action_dim: int, 
-                 actor_hidden_layers: list[int], 
-                 critic_hidden_layers: list[int], 
-                 actor_lr: float, 
-                 critic_lr: float, 
-                 max_action, 
+                 actor_hidden_layers: list[int] = [256, 256], 
+                 critic_hidden_layers: list[int] = [256, 256], 
+                 actor_lr: float = 3e-4, 
+                 critic_lr: float = 3e-4, 
                  device: str = None,
                  gamma: float = 0.99, 
                  tau: float = 0.005, 
                  policy_noise: float = 0.2, 
-                 noise_clip=0.5, 
+                 noise_clip: float = 0.5, 
                  exploration_noise: float = 0.1,
-                 policy_freq_update=2):
+                 policy_freq_update: int = 2, 
+                 replay_buffer=None):
         
-        self.device = device if device is not None else get_device()
-        self.action_dim = action_dim
+        self.device = device if device is not None else self.get_device()
+        state_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.shape[0]
         
         # initialize the actor and critic networks
         self.actor = Deterministic_Actor(state_dim, action_dim, env, actor_hidden_layers).to(self.device)
@@ -256,20 +252,18 @@ class CrossQTD3_Agent(Base_Agent):
         self.target_actor.eval()
         
         # define parameters
-        self.max_action = max_action
         self.gamma = gamma
         self.tau = tau
         self.policy_noise = policy_noise
         self.noise_clip = noise_clip
         self.exploration_noise = exploration_noise
         self.policy_freq_update = policy_freq_update
-        #self.total_it = 0
         
-        self.replay_buffer = None # TODO find a way to set a simple buffer or PER buffer
+        self.replay_buffer = None if replay_buffer is None else replay_buffer
         
         # define optimizers
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr, betas=(0.5, 0.999))
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr, betas=(0.5, 0.999))
 
 
     def select_action(self, state: torch.Tensor, train: bool) -> torch.Tensor:
@@ -300,37 +294,34 @@ class CrossQTD3_Agent(Base_Agent):
         
         return action
 
-    def rollout(self, env, max_steps: int, train: bool) -> None:
+    def rollout(self, max_steps: int, train: bool) -> None:
         """
         Rollout the agent in the environment
         """
         # Run policy in environment
         for _ in range(max_steps):
-            state = env.reset()
+            state = self.env.reset()
             terminated = False
             truncated = False
             while not terminated and not truncated: #TODO: add behavior for truncated episodes
                 action = self.select_action(state, train) # While rollouts the target actor is used
-                next_state, reward, terminated, truncated, info = env.step(action)
+                next_state, reward, terminated, truncated, info = self.env.step(action)
                 self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
                 state = next_state
 
-    def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
+    def train(self, max_steps: int, batch_size: int, train_episodes: int, train_steps_per_rollout: int) -> None:
         """
         Train the agent
         """
-        # rollout the agent in the environment
-        #TODO define a way to set the buffer
-        self.replay_buffer = SimpleBuffer(max_size, batch_size, gamma, n_steps=1, seed=0)
-        self.rollout(env, max_steps, eval=False)
         
-        ep_counter = 0
+        if len(self.replay_buffer) == 0:
+            self._do_random_actions(batch_size)
         
         for ep in range(train_episodes):
             
-            self.rollout(env, max_steps, train=True)
+            self.rollout(max_steps, train=True)
             
-            for train_step in range(train_steps_per_rollout):
+            for _ in range(train_steps_per_rollout):
 
                 # Train 50 times every 50 steps
                 #if ep_counter % train_steps == 0:                
