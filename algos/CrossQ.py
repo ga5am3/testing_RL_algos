@@ -118,16 +118,23 @@ class CrossQSAC_Agent(Base_Agent):
             state, _ = env.reset(seed=0) #TODO: make seed a parameter
             termination = False
             truncation = False
-            # steps = 0
+
+            total_ep_reward = 0
+            steps = 0
             while ((not termination) and (not truncation)):
                 action = self.select_action(state, eval).cpu().numpy()
                 next_state, reward, termination, truncation, infos = env.step(action)                
                 self.replay_buffer.add(state, next_state, action, reward, termination, truncation)
-                state = next_state  
-                #print("State: ", state) 
-                #print("Termination: ", termination)
-                #print("Truncation: ", truncation)
-                # steps += 1
+                state = next_state 
+                steps += 1
+                total_ep_reward += reward
+
+            print(f"Episode finished in {steps} steps with Average Reward = {total_ep_reward:.2f}")
+            if self.use_wandb:
+                wandb.log({
+                    "rollout/episode_steps": steps,
+                    "rollout/episode_reward": total_ep_reward
+                })
 
     def train(self, batch_size: int, total_timesteps: int, save_freq: int = 1000) -> None:
         """
@@ -185,6 +192,8 @@ class CrossQSAC_Agent(Base_Agent):
 
                 if self.use_wandb:
                     wandb.log({
+                        "critic_1_loss": q1_loss,
+                        "critic_2_loss": q2_loss,
                         "critic_loss": total_q_loss,
                         "entropy_loss": entropy_loss,
                         "critic_grad_norm": critic_grad_norm,
@@ -342,6 +351,9 @@ class CrossQTD3_Agent(Base_Agent):
             state = self.env.reset()
             terminated = False
             truncated = False
+
+            total_ep_reward = 0
+            steps = 0
             while not terminated and not truncated: #TODO: add behavior for truncated episodes
                 action = self.select_action(state, train) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = self.env.step(action)
@@ -350,17 +362,14 @@ class CrossQTD3_Agent(Base_Agent):
 
                 # update episode statistics
                 steps += 1
-                avg_episode_reward += reward
+                total_ep_reward += reward
     
-            print(f"Episode finished in {steps} steps with Average Reward = {avg_episode_reward:.2f}")
+            print(f"Episode finished in {steps} steps with Average Reward = {total_ep_reward:.2f}")
             if self.use_wandb:
                 wandb.log({
                     "rollout/episode_steps": steps,
-                    "rollout/episode_reward": avg_episode_reward
+                    "rollout/episode_reward": total_ep_reward
                 })
-            # reset stats for the next episode
-            steps = 0
-            avg_episode_reward = 0
 
     def train(self, env, max_steps, max_size, gamma, batch_size: int, train_episodes, train_steps_per_rollout) -> None:
         """
@@ -370,7 +379,7 @@ class CrossQTD3_Agent(Base_Agent):
         if len(self.replay_buffer) == 0:
             self._do_random_actions(batch_size)
         
-        for ep in range(train_episodes):
+        for global_step in range(train_episodes):
             
             self.rollout(max_steps, train=True)
             
@@ -415,9 +424,21 @@ class CrossQTD3_Agent(Base_Agent):
                 self.critic_optimizer.zero_grad()
                 total_critic_loss.backward()
                 self.critic_optimizer.step()
+
+                # Compute gradient and do optimizer step logging #! might remove this
+                critic_grad_norm = sum([p.grad.data.norm(2).item() ** 2 for p in self.critic.parameters()]) ** 0.5
+
+                if self.wandb:
+                    wandb.log({
+                        "critic_1_loss": critic_loss_1,
+                        "critic_2_loss": critic_loss_2,
+                        "critic_total_loss": total_critic_loss,
+                        "critic_grad_norm": critic_grad_norm,
+                        "train_step": global_step
+                    })
                 
                 # every N steps update the actor
-                if ep % self.policy_freq_update == 0:
+                if global_step % self.policy_freq_update == 0:
                     n_action = self.select_action(state_tensor, train=False)
                     self.critic.eval()
                     with torch.no_grad():
@@ -433,9 +454,16 @@ class CrossQTD3_Agent(Base_Agent):
                     for actor_param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
                         target_param.data.copy_(self.tau * actor_param.data + (1 - self.tau) * target_param.data)
 
-            # log stuff
+                    # log stuff
+                    if self.wandb:
+                        wandb.log({
+                            "actor_loss": actor_loss,
+                        })
 
-            # update info
+            
+                # Save the model checkpoint every save_freq training steps
+                if global_step % save_freq == 0 and global_step > 0:
+                    self.save(f"model_checkpoint_{global_step}.pt")
 
     def save(self, filename: str) -> None:
         models = {
