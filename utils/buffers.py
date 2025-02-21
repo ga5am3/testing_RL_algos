@@ -59,7 +59,7 @@ class SimpleBuffer():
             
         samples = random.sample(self.memory, k=batch_size)
         states, actions, rewards, next_states, terminals, truncated = zip(*samples)
-        return states, actions, rewards, next_states, terminals, truncated
+        return np.stack(states), np.stack(actions), np.stack(rewards), np.stack(next_states), np.stack(terminals), np.stack(truncated)
 
     def __len__(self):
         return len(self.memory)
