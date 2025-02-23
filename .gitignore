@@ -2,3 +2,6 @@ testing_utils
 test.ipynb
 wandb
 algos/__pycache__
+utils/__pycache__
+netwroks/__pycache__
+sac_pendulum_tensorboard

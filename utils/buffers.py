@@ -17,7 +17,7 @@ class SimpleBuffer():
         self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "terminated", "truncated"])
         random.seed(seed)
 
-    def add(self, state, next_state, action, reward, terminated, truncated):
+    def add(self, state, action, reward, next_state, terminated, truncated):
         # TODO: add the next_state to the buffer (remember to add real_next_state if truncated)?
         done = terminated or truncated
 
@@ -59,6 +59,12 @@ class SimpleBuffer():
             
         samples = random.sample(self.memory, k=batch_size)
         states, actions, rewards, next_states, terminals, truncated = zip(*samples)
+        # print('States: ', [s for s in states if len(s) != 3])
+        # print('Actions: ', [a for a in actions if len(a) != 1])
+        # print('Rewards: ', [r for r in rewards if len(r) != 1])
+        # print('Next States: ', [ns for ns in next_states if len(ns) != 3])
+        # print('Terminals: ', [t for t in terminals if len(t) != 1])
+        # print('Truncated: ', [tr for tr in truncated if len(tr) != 1])
         return np.stack(states), np.stack(actions), np.stack(rewards), np.stack(next_states), np.stack(terminals), np.stack(truncated)
 
     def __len__(self):

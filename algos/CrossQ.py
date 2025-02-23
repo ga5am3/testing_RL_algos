@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from networks.actors import CrossQ_SAC_Actor, Deterministic_Actor
@@ -28,10 +28,10 @@ class CrossQSAC_Agent(Base_Agent):
     """
     def __init__(self, 
                  env: gym.Env,
-                 actor_hidden_layers: list[int] = [256, 256],
+                 actor_hidden_layers: list[int] = [512, 512],
                  critic_hidden_layers: list[int] = [512, 512],
-                 actor_lr: float = 3e-4,
-                 critic_lr: float = 3e-4,
+                 actor_lr: float = 1e-3,
+                 critic_lr: float = 1e-3,
                  device: str = None,
                  gamma: float = 0.99,
                  policy_freq: int = 2,
@@ -41,8 +41,9 @@ class CrossQSAC_Agent(Base_Agent):
         super().__init__(env, replay_buffer)
 
         self.env = env
-        self.initial_training_steps = 1000 #TODO verify if these are steps or episodes
-        self.training_steps_per_rollout = 1 
+        self.initial_training_steps = 50 #TODO verify if these are steps or episodes
+        self.training_steps_per_rollout = 2
+        self.use_wandb = use_wandb
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
 
@@ -78,7 +79,7 @@ class CrossQSAC_Agent(Base_Agent):
         #TODO: check this
         self.target_entropy = -torch.prod(torch.tensor(env.action_space.shape).to(self.device))  
         init_temperature = 1.0
-        self.log_alpha = torch.tensor([np.log(init_temperature)], requires_grad=True, device=self.device)
+        self.log_alpha = torch.tensor([np.log(init_temperature)], requires_grad=True, dtype=torch.float32, device=self.device)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr, betas=(0.5, 0.999))
 
         if use_wandb: #TODO: this should be in the main file
@@ -122,7 +123,7 @@ class CrossQSAC_Agent(Base_Agent):
         # Run policy in environment
         for _ in range(episodes):
             #print("====================================")
-            print("Rollout step ", _)
+            #print("Rollout step ", _)
             state, _ = self.env.reset(seed=0) #TODO: make seed a parameter
             termination = False
             truncation = False
@@ -130,21 +131,27 @@ class CrossQSAC_Agent(Base_Agent):
             total_ep_reward = 0
             steps = 0
             while ((not termination) and (not truncation)):
-                action = self.select_action(state, eval).cpu().numpy()
-                next_state, reward, termination, truncation, infos = self.env.step(action)                
-                self.replay_buffer.add(state, next_state, action, reward, termination, truncation)
+                action = self.select_action(state, eval)
+                next_state, reward, termination, truncation, infos = self.env.step(action)   
+                #print(reward)
+                # if self.use_wandb:
+                #     wandb.log({
+                #         "rollout/reward_per_step": reward
+                #     })             
+                self.replay_buffer.add(state, action, reward, next_state, termination, truncation)
                 state = next_state 
                 steps += 1
                 total_ep_reward += reward
 
-            print(f"Episode finished in {steps} steps with Average Reward = {total_ep_reward:.2f}")
+            #print(f"Episode finished in {steps} steps with Average Reward = {total_ep_reward:.2f}")
             if self.use_wandb:
                 wandb.log({
                     "rollout/episode_steps": steps,
+                    "rollout/avg_reward": total_ep_reward/steps, 
                     "rollout/episode_reward": total_ep_reward
                 })
 
-    def train(self, batch_size: int, rollout_eps: int,total_steps: int, save_freq: int = 1000) -> None:
+    def train(self, batch_size: int, rollout_eps: int, total_steps: int, save_freq: int = 1000) -> None:
         """
         Train the agent
         """
@@ -154,13 +161,13 @@ class CrossQSAC_Agent(Base_Agent):
             if len(self.replay_buffer) == 0:
                 self._do_random_actions(self.initial_training_steps)
             else:
-                self.rollout(rollout_eps, train=True)
+                self.rollout(rollout_eps, eval=True)
             
             # rollout the agent in the environment
             # sample a batch from the replay buffer
             for train_step in range(self.training_steps_per_rollout):
                 experience = self.replay_buffer.sample(batch_size)
-                states, next_states, actions, rewards, terminations, truncations = experience
+                states, actions, rewards, next_states, terminations, truncations = experience
                 states = torch.FloatTensor(states).to(self.device)
                 next_states = torch.FloatTensor(next_states).to(self.device)
                 actions = torch.FloatTensor(actions).to(self.device)
@@ -181,9 +188,12 @@ class CrossQSAC_Agent(Base_Agent):
                 q_values_1, q_values_2 = torch.chunk(cat_q1, chunks=2, dim=0)
                 q_values_1_next, q_values_2_next = torch.chunk(cat_q2, chunks=2, dim=0)
 
-                target_q_values = (torch.min(q_values_1_next, q_values_2_next) - self.alpha * log_probs)
+                target_q_values = (torch.minimum(q_values_1_next, q_values_2_next) - self.log_alpha * log_probs)
+                # print('Terminations', terminations.shape)
+                # print('Rewards', rewards.shape)
+                # print('Target Q values', target_q_values.shape)
                 
-                q_target = rewards * self.rewards_scale + self.gamma * (1 - terminations) * target_q_values
+                q_target = rewards.unsqueeze(-1) * self.rewards_scale + self.gamma * (1 - terminations) @ target_q_values
                 torch.detach(q_target)
 
                 q1_loss = F.mse_loss(q_values_1, q_target)
@@ -203,7 +213,6 @@ class CrossQSAC_Agent(Base_Agent):
                         "critic_1_loss": q1_loss,
                         "critic_2_loss": q2_loss,
                         "critic_loss": total_q_loss,
-                        "entropy_loss": entropy_loss,
                         "critic_grad_norm": critic_grad_norm,
                         "train_step": train_step,
                         "global_step": global_step
@@ -218,14 +227,14 @@ class CrossQSAC_Agent(Base_Agent):
                     self.critic.train()
 
                     min_q = torch.min(q1, q2)
-                    policy_loss = (self.alpha * log_probs - min_q).mean()
+                    policy_loss = (self.log_alpha * log_probs - min_q).mean()
 
                     self.actor_net_optimizer.zero_grad()
                     policy_loss.backward()
                     self.actor_net_optimizer.step()
 
                     # temperature update
-                    entropy_loss = (self.alpha * (-log_probs - self.target_entropy).detach()).mean()
+                    entropy_loss = (self.log_alpha * (-log_probs - self.target_entropy).detach()).mean()
                     self.alpha_optimizer.zero_grad()
                     entropy_loss.backward()
                     self.alpha_optimizer.step()
@@ -235,13 +244,13 @@ class CrossQSAC_Agent(Base_Agent):
                         wandb.log({
                             "actor_loss": policy_loss,
                             "entropy_loss": entropy_loss,
-                            "alpha": self.alpha,
+                            "log_alpha": self.log_alpha,
                             "log_probs": log_probs,
                         })
 
                 # Save the model checkpoint every save_freq training steps
-                if global_step % save_freq == 0 and global_step > 0:
-                    self.save(f"model_checkpoint_{global_step}.pt")
+                #if global_step % save_freq == 0 and global_step > 0:
+                #    self.save(f"model_checkpoint_{global_step}.pt")
 
     def save(self, filename: str) -> None:
         """
@@ -283,8 +292,8 @@ class CrossQTD3_Agent(Base_Agent):
                  env: gym.Env, 
                  actor_hidden_layers: list[int] = [256, 256], 
                  critic_hidden_layers: list[int] = [256, 256], 
-                 actor_lr: float = 3e-4, 
-                 critic_lr: float = 3e-4, 
+                 actor_lr: float = 3e-3, 
+                 critic_lr: float = 3e-3, 
                  device: str = None,
                  gamma: float = 0.99, 
                  tau: float = 0.005, 
@@ -365,7 +374,7 @@ class CrossQTD3_Agent(Base_Agent):
             with torch.no_grad():
                 state = torch.FloatTensor(state).to(self.device) 
                 action = self.actor(state).cpu().data.numpy().flatten()
-                noise = torch.normal(0, self.max_action * self.exploration_noise, size=self.action_dim)
+                noise = torch.normal(torch.Tensor([0]), torch.Tensor(self.max_action * self.exploration_noise), size=self.action_dim)
                 action = action + noise
                 action = np.clip(action, -self.max_action, self.max_action)
                 action = torch.Tensor(action)
@@ -375,10 +384,12 @@ class CrossQTD3_Agent(Base_Agent):
             self.target_actor.eval()
             with torch.no_grad():
                 state = torch.FloatTensor(state).to(self.device)
-                action = self.target_actor(state).cpu().data.numpy().flatten()
-                noise = torch.normal(0, self.policy_noise, size=self.action_dim).clamp(-self.noise_clip, self.noise_clip)
-                action = action + noise
-                action = action.clamp(-self.max_action, self.max_action)
+                action = self.target_actor(state)#
+                print(action)
+                print(self.action_dim)
+                noise = torch.normal(0.0, self.policy_noise, size=(self.action_dim,)).clamp(-self.noise_clip, self.noise_clip).to(self.device)
+                action = (action + noise).cpu()
+                action = action.clamp(torch.Tensor([-self.max_action]), torch.Tensor([self.max_action])).data.numpy().flatten()
             self.target_actor.train()
         
         return action
@@ -399,7 +410,7 @@ class CrossQTD3_Agent(Base_Agent):
             while not terminated and not truncated: #TODO: add behavior for truncated episodes
                 action = self.select_action(state, train) # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = self.env.step(action)
-                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
+                self.replay_buffer.add(state, action, reward, next_state, terminated, truncated)
                 state = next_state
                 steps += 1
                 total_ep_reward += reward
@@ -428,7 +439,7 @@ class CrossQTD3_Agent(Base_Agent):
                 # Train 50 times every 50 steps
                 #if ep_counter % train_steps == 0:                
                 # sample a batch from the replay buffer
-                state, next_state, action, reward, terminated, truncated = self.replay_buffer.sample(batch_size)
+                state, action, reward, next_state, terminated, truncated = self.replay_buffer.sample(batch_size)
             
                 # convert everything to tensors
                 state_tensor = torch.FloatTensor(state).to(self.device)
@@ -440,7 +451,7 @@ class CrossQTD3_Agent(Base_Agent):
         
                 # calculate the Q
                     #noise = (torch.randn_like(action_tensor) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
-                next_action = self.select_action(next_state, train=False)
+                next_action = torch.Tensor(self.select_action(next_state, train=False))
                 
                 state_next_state = torch.cat([state_tensor, next_state_tensor], dim=0) # * If state tensor is 1D, put an unsqueeze(0)
                 action_next_action = torch.cat([action_tensor, next_action], dim=0) # * If state tensor is 1D, put an unsqueeze(0)

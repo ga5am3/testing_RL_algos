@@ -11,12 +11,12 @@ class Base_Agent:
         actions = np.array([self.env.action_space.sample() for _ in range(initial_steps)])
 
         for i in range(initial_steps):
-            state = self.env.reset()
+            state, _ = self.env.reset()
             terminated, truncated = False, False  
             while not terminated and not truncated:  
                 action = actions[i]  # While rollouts the target actor is used
                 next_state, reward, terminated, truncated, info = self.env.step(action)
-                self.replay_buffer.add(state, next_state, action, reward, terminated, truncated)
+                self.replay_buffer.add(state, action, reward, next_state, terminated, truncated)
                 state = next_state
                 
     def get_device(self):

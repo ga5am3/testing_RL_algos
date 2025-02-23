@@ -104,7 +104,7 @@ class Deterministic_Actor(BaseActor):
                 hidden_sizes: list[int]=[256, 256]):
         super().__init__()
 
-        momentum = 0.1  
+        momentum = 0.01  
         self.actor_net = nn.Sequential(
             BatchRenorm(state_dim, momentum=momentum),
             nn.Linear(state_dim, hidden_sizes[0]),

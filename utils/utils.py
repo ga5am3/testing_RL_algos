@@ -18,7 +18,7 @@ class BatchRenorm(nn.Module):
         max_d: maximum value for d
         smoothing: smoothing factor for transition from BN to BR
     """
-    def __init__(self, num_features, momentum=0.1, warmup=100_000, max_r=3.0, max_d=5.0, warmup_type= "smooth"):
+    def __init__(self, num_features, momentum=0.1, warmup=300, max_r=3.0, max_d=5.0, warmup_type= "smooth"):
         super(BatchRenorm, self).__init__()
         self.momentum = momentum
         self.warmup = warmup
@@ -43,7 +43,7 @@ class BatchRenorm(nn.Module):
         # suppose we have input of shape (batch_size, num_features, height, width) (e.g. (32, 3, 64, 64))
         view_shape = [1, x.shape[1]] + [1] * (x.dim() - 2) # [1, 3, 1, 1] 
 
-        dims = [i for i in range(x.dim()) if i != 1] # [0, 2, 3]    
+        dims = [i for i in range(x.dim()) if i != 1] # [0, 2, 3]  
 
         running_std = (self.running_var + self.eps).sqrt()
 
