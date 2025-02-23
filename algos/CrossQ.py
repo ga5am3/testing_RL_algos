@@ -497,32 +497,32 @@ class CrossQTD3_Agent(Base_Agent):
                         self.tau * actor_param.data + (1 - self.tau) * target_param.data
                     )
 
-                # log stuff
-                if self.use_wandb and global_step % 10 == 0:
-                    # Compute gradient and do optimizer step logging #! might remove this
-                    critic_grad_norm = (
-                        sum(
-                            [
-                                p.grad.data.norm(2).item() ** 2
-                                for p in self.critic.parameters()
-                            ]
-                        )
-                        ** 0.5
+            # log stuff
+            if self.use_wandb and global_step % 10 == 0:
+                # Compute gradient and do optimizer step logging #! might remove this
+                critic_grad_norm = (
+                    sum(
+                        [
+                            p.grad.data.norm(2).item() ** 2
+                            for p in self.critic.parameters()
+                        ]
                     )
+                    ** 0.5
+                )
 
-                    wandb.log(
-                        {
-                            "critic_1_loss": critic_loss_1,
-                            "critic_2_loss": critic_loss_2,
-                            "critic_loss": total_critic_loss,
-                            "critic_grad_norm": critic_grad_norm,
-                            "global_step": global_step,
-                            "actor_loss": actor_loss,
-                        }
-                    )
-                # Save the model checkpoint every save_freq training steps
-                if global_step % save_freq == 0 and global_step > 0:
-                    self.save(f"model_checkpoint_{global_step}.pt")
+                wandb.log(
+                    {
+                        "critic_1_loss": critic_loss_1,
+                        "critic_2_loss": critic_loss_2,
+                        "critic_loss": total_critic_loss,
+                        "critic_grad_norm": critic_grad_norm,
+                        "global_step": global_step,
+                        "actor_loss": actor_loss,
+                    }
+                )
+            # Save the model checkpoint every save_freq training steps
+            if global_step % save_freq == 0 and global_step > 0:
+                self.save(f"model_checkpoint_{global_step}.pt")
 
     def save(self, filename: str) -> None:
         models = {
