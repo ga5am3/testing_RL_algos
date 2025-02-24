@@ -29,12 +29,12 @@ class CrossQSAC_Agent(Base_Agent):
     def __init__(self, 
                  env: gym.Env,
                  actor_hidden_layers: list[int] = [512, 512],
-                 critic_hidden_layers: list[int] = [512, 512],
-                 actor_lr: float = 1e-3,
-                 critic_lr: float = 1e-3,
+                 critic_hidden_layers: list[int] = [2048, 2048],
+                 actor_lr: float = 0.001,
+                 critic_lr: float = 0.001,
                  device: str = None,
                  gamma: float = 0.99,
-                 policy_freq: int = 2,
+                 policy_freq: int = 3,
                  replay_buffer = None,
                  use_wandb: bool = False):
         
@@ -42,7 +42,7 @@ class CrossQSAC_Agent(Base_Agent):
 
         self.env = env
         self.initial_training_steps = 50 #TODO verify if these are steps or episodes
-        self.training_steps_per_rollout = 2
+        self.training_steps_per_rollout = 1
         self.use_wandb = use_wandb
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
@@ -61,7 +61,7 @@ class CrossQSAC_Agent(Base_Agent):
         self.critic = CrossQCritic(state_dim=state_dim, 
                                    action_dim=action_dim, 
                                    hidden_sizes=critic_hidden_layers, 
-                                   activation="tanh").to(self.device)
+                                   activation="relu").to(self.device)
         # params
         self.max_action = env.action_space.high
         self.gamma = gamma
@@ -249,8 +249,8 @@ class CrossQSAC_Agent(Base_Agent):
                         })
 
                 # Save the model checkpoint every save_freq training steps
-                #if global_step % save_freq == 0 and global_step > 0:
-                #    self.save(f"model_checkpoint_{global_step}.pt")
+                if global_step % save_freq == 0 and global_step > 0:
+                    self.save(f"model_checkpoint_{global_step}.pt")
 
     def save(self, filename: str) -> None:
         """
