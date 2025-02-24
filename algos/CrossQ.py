@@ -188,7 +188,7 @@ class CrossQSAC_Agent(Base_Agent):
                 q_values_1, q_values_2 = torch.chunk(cat_q1, chunks=2, dim=0)
                 q_values_1_next, q_values_2_next = torch.chunk(cat_q2, chunks=2, dim=0)
 
-                target_q_values = (torch.minimum(q_values_1_next, q_values_2_next) - self.log_alpha * log_probs)
+                target_q_values = (torch.minimum(q_values_1_next, q_values_2_next) - self.log_alpha.exp() * log_probs)
                 # print('Terminations', terminations.shape)
                 # print('Rewards', rewards.shape)
                 # print('Target Q values', target_q_values.shape)
