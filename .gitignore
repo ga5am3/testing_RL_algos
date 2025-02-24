@@ -5,3 +5,5 @@ algos/__pycache__/
 utils/__pycache__/
 netwroks/__pycache__/
 sac_pendulum_tensorboard
+runs
+sac_cleanrl.py
