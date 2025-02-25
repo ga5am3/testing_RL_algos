@@ -55,7 +55,7 @@ class CrossQ_SAC_Actor(BaseActor):
         self._initialize_weights()
         # TODO: check this part (single action space is not defined in not vectorized envs)
         self.register_buffer("action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
-        self.register_buffer("action_bias", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
+        self.register_buffer("action_bias", torch.tensor((env.action_space.high + env.action_space.low) / 2.0))
 
     def _initialize_weights(self):
         for layer in list(self.actor_net) + [self.mean, self.log_std]:
@@ -77,6 +77,7 @@ class CrossQ_SAC_Actor(BaseActor):
         # Forward pass
         mean, log_std = self.forward(state)
         std = log_std.exp()
+        
         # Reparametrization trick
         normal = torch.distributions.Normal(mean, std)
         epsilon = normal.rsample()
@@ -119,7 +120,7 @@ class Deterministic_Actor(BaseActor):
         self._initialize_weights()
 
         self.register_buffer("action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
-        self.register_buffer("action_bias", torch.tensor((env.action_space.high - env.action_space.low) / 2.0))
+        self.register_buffer("action_bias", torch.tensor((env.action_space.high + env.action_space.low) / 2.0))
 
     def _initialize_weights(self):
         for layer in list(self.actor_net):

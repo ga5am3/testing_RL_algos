@@ -18,7 +18,7 @@ class BatchRenorm(nn.Module):
         max_d: maximum value for d
         smoothing: smoothing factor for transition from BN to BR
     """
-    def __init__(self, num_features, momentum=0.99, warmup=10e5, max_r=3.0, max_d=5.0, warmup_type= "smooth"):
+    def __init__(self, num_features, momentum=0.01, warmup=100000, max_r=3.0, max_d=5.0, warmup_type= "smooth"):
         super(BatchRenorm, self).__init__()
         self.momentum = momentum
         self.warmup = warmup
