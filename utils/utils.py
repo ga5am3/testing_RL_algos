@@ -1,5 +1,18 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
+from torch.distributions import Normal, TransformedDistribution, TanhTransform
+
+class SquashedNormal(TransformedDistribution):
+    def __init__(self, loc: torch.Tensor, scale: torch.Tensor):
+        self.loc = loc
+        self.scale = scale
+        base_distribution = Normal(loc, scale)
+        super().__init__(base_distribution, TanhTransform())
+        
+    @property
+    def mean(self):
+        return torch.tanh(self.loc)
 
 warmup_function = {
     "smooth": lambda c, w: min(1.0, c / w),

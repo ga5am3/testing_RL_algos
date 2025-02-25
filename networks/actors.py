@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from abc import ABC, abstractmethod
 import gymnasium as gym
-from utils.utils import BatchRenorm
+from utils.utils import BatchRenorm, SquashedNormal
 class BaseActor(nn.Module, ABC):
     def __init__(self):
         super(BaseActor, self).__init__()
@@ -95,6 +95,24 @@ class CrossQ_SAC_Actor(BaseActor):
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
 
         return action, log_prob, mean
+
+    def get_action_alt(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Forward pass
+        mean, log_std = self.forward(state)
+        std = log_std.exp()
+        
+        dist = SquashedNormal(mean, std)
+        
+        # Sample and compute log prob
+        sample = dist.rsample()
+        log_prob = dist.log_prob(sample).sum(1, keepdim=True)
+        
+        # Scale and shift action
+        action = sample * self.action_scale + self.action_bias
+        mean_action = mean * self.action_scale + self.action_bias 
+        
+        return action, log_prob, mean_action
+    
     
 # sorry gabriel, deleted it on accident
 class Deterministic_Actor(BaseActor):

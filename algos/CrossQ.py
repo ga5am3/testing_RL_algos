@@ -239,7 +239,7 @@ class CrossQSAC_Agent(Base_Agent):
                     self.actor_net_optimizer.step()
 
                     # temperature update
-                    entropy_loss = -(self.log_alpha * (log_probs + self.target_entropy).detach()).mean()
+                    entropy_loss = -(self.log_alpha.exp() * (log_probs + self.target_entropy).detach()).mean()
                     self.alpha_optimizer.zero_grad()
                     entropy_loss.backward()
                     self.alpha_optimizer.step()
@@ -252,7 +252,7 @@ class CrossQSAC_Agent(Base_Agent):
                             "log_alpha": self.log_alpha,
                             "alpha": self.log_alpha.exp(),
                             "log_probs": log_probs,
-                            "entropy": log_probs.mean().item()
+                            "entropy": -log_probs.mean().item()
                         })
 
                 # Save the model checkpoint every save_freq training steps
