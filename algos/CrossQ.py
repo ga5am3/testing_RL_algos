@@ -30,7 +30,7 @@ class CrossQSAC_Agent(Base_Agent):
                  env: gym.Env,
                  actor_hidden_layers: list[int] = [512, 512],
                  critic_hidden_layers: list[int] = [512, 512],
-                 actor_lr: float = 0.00001,
+                 actor_lr: float = 0.0000001,
                  critic_lr: float = 0.0005,
                  alpha_lr: float = 0.001, 
                  device: str = None,
@@ -62,7 +62,7 @@ class CrossQSAC_Agent(Base_Agent):
         self.critic = CrossQCritic(state_dim=state_dim, 
                                    action_dim=action_dim, 
                                    hidden_sizes=critic_hidden_layers, 
-                                   activation="relu").to(self.device)
+                                   activation="relu6").to(self.device)
         # params
         self.max_action = env.action_space.high
         self.gamma = gamma
@@ -80,6 +80,7 @@ class CrossQSAC_Agent(Base_Agent):
         #TODO: check this
         self.target_entropy = -torch.prod(torch.tensor(env.action_space.shape).to(self.device))
         init_temperature = 1.0
+        #self.log_alpha = torch.nn.Parameter(torch.tensor(np.log(init_temperature), dtype=torch.float32, device=self.device))
         self.log_alpha = torch.tensor([np.log(init_temperature)], requires_grad=True, dtype=torch.float32, device=self.device)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
 
@@ -239,7 +240,7 @@ class CrossQSAC_Agent(Base_Agent):
                     self.actor_net_optimizer.step()
 
                     # temperature update
-                    entropy_loss = -(self.log_alpha * (log_probs + self.target_entropy).detach()).mean()
+                    entropy_loss = -(self.log_alpha.exp() * (log_probs + self.target_entropy).detach()).mean()
                     self.alpha_optimizer.zero_grad()
                     entropy_loss.backward()
                     self.alpha_optimizer.step()
@@ -254,7 +255,7 @@ class CrossQSAC_Agent(Base_Agent):
                             "log_probs": log_probs,
                             "entropy": -log_probs.mean().item()
                         })
-
+                print(self.log_alpha.grad)
                 # Save the model checkpoint every save_freq training steps
                 if global_step % save_freq == 0 and global_step > 0:
                     self.save(f"model_checkpoint_{global_step}.pt")
