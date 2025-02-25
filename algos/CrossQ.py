@@ -32,7 +32,7 @@ class CrossQSAC_Agent(Base_Agent):
                  critic_hidden_layers: list[int] = [512, 512],
                  actor_lr: float = 0.00001,
                  critic_lr: float = 0.0005,
-                 alpha_lr: float = 0.00001, 
+                 alpha_lr: float = 0.001, 
                  device: str = None,
                  gamma: float = 0.99,
                  policy_freq: int = 3,
@@ -252,7 +252,7 @@ class CrossQSAC_Agent(Base_Agent):
                             "log_alpha": self.log_alpha,
                             "alpha": self.log_alpha.exp(),
                             "log_probs": log_probs,
-                            "entropy": log_probs.mean().item()
+                            "entropy": -log_probs.mean().item()
                         })
 
                 # Save the model checkpoint every save_freq training steps
