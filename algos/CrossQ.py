@@ -31,8 +31,8 @@ class CrossQSAC_Agent(Base_Agent):
                  actor_hidden_layers: list[int] = [512, 512],
                  critic_hidden_layers: list[int] = [512, 512],
                  actor_lr: float = 0.00001,
-                 critic_lr: float = 0.0005,
-                 alpha_lr: float = 0.01, 
+                 critic_lr: float = 0.0008,
+                 alpha_lr: float = 0.001, 
                  device: str = None,
                  gamma: float = 0.99,
                  policy_freq: int = 3,
@@ -111,9 +111,9 @@ class CrossQSAC_Agent(Base_Agent):
             states = torch.FloatTensor(states).to(self.device)
             states = states.unsqueeze(0)
             if train:
-                action, _, _ = self.actor.get_action(states)
+                action, _, _ = self.actor.get_action_alt(states)
             else:
-                _ , _, action = self.actor.get_action(states)
+                _ , _, action = self.actor.get_action_alt(states)
             action = action.cpu().numpy().flatten()
             #print(action)
         self.actor.train()
@@ -127,7 +127,7 @@ class CrossQSAC_Agent(Base_Agent):
         for _ in range(episodes):
             #print("====================================")
             #print("Rollout step ", _)
-            state, _ = self.env.reset(seed=0) #TODO: make seed a parameter
+            state, _ = self.env.reset(seed=1) #TODO: make seed a parameter
             termination = False
             truncation = False
 
@@ -186,7 +186,7 @@ class CrossQSAC_Agent(Base_Agent):
                 # calculate the Q
                 with torch.no_grad():
                     self.actor.eval()
-                    next_actions, log_probs, _ = self.actor.get_action(next_states)
+                    next_actions, log_probs, _ = self.actor.get_action_alt(next_states)
                     self.actor.train()
 
                 cat_states = torch.cat([states, next_states], dim=0)
@@ -235,7 +235,7 @@ class CrossQSAC_Agent(Base_Agent):
 
                 if global_step % self.policy_update_freq == 0:
                     # policy update
-                    next_actions, log_probs, _ = self.actor.get_action(states)
+                    next_actions, log_probs, _ = self.actor.get_action_alt(states)
                     
                     self.critic.eval()
                     #with torch.no_grad():
