@@ -30,9 +30,9 @@ class CrossQSAC_Agent(Base_Agent):
                  env: gym.Env,
                  actor_hidden_layers: list[int] = [512, 512],
                  critic_hidden_layers: list[int] = [512, 512],
-                 actor_lr: float = 0.0000001,
+                 actor_lr: float = 0.00001,
                  critic_lr: float = 0.0005,
-                 alpha_lr: float = 0.001, 
+                 alpha_lr: float = 0.01, 
                  device: str = None,
                  gamma: float = 0.99,
                  policy_freq: int = 3,
@@ -42,7 +42,7 @@ class CrossQSAC_Agent(Base_Agent):
         super().__init__(env, replay_buffer)
 
         self.env = env
-        self.initial_training_steps = 200 #TODO verify if these are steps or episodes
+        self.initial_training_steps = 2 #TODO verify if these are steps or episodes
         self.training_steps_per_rollout = 1
         self.use_wandb = use_wandb
         state_dim = env.observation_space.shape[0]
@@ -161,6 +161,11 @@ class CrossQSAC_Agent(Base_Agent):
 
         for global_step in range(total_steps):
             
+            if self.use_wandb:
+                wandb.log({
+                    "Replay_buffer_lenght": len(self.replay_buffer)
+                })
+            
             if len(self.replay_buffer) == 0:
                 self._do_random_actions(self.initial_training_steps)
             else:
@@ -191,6 +196,10 @@ class CrossQSAC_Agent(Base_Agent):
                 q_values_1, q_values_1_next = torch.chunk(cat_q1, chunks=2, dim=0)
                 q_values_2, q_values_2_next = torch.chunk(cat_q2, chunks=2, dim=0)
                 
+                #print(q_values_1)
+                #print(q_values_1.detach().mean())
+                #print(q_values_2)
+                                
                 target_q_values = (torch.minimum(q_values_1_next, q_values_2_next) - self.log_alpha.exp() * log_probs)
                 # print('Terminations', terminations.shape)
                 # print('Rewards', rewards.shape)
@@ -213,14 +222,15 @@ class CrossQSAC_Agent(Base_Agent):
 
                 if self.use_wandb:
                     wandb.log({
-                        "q_values_1": q_values_1,
-                        "q_values_2": q_values_2,
+                        "q_values_1": q_values_1.mean().item(),
+                        "q_values_2": q_values_2.mean().item(),
+                        "q_target": q_target.mean().item(),
                         "critic_1_loss": q1_loss,
                         "critic_2_loss": q2_loss,
                         "critic_loss": total_q_loss,
                         "critic_grad_norm": critic_grad_norm,
                         "train_step": train_step,
-                        "global_step": global_step
+                        "global_step": global_step, 
                     })
 
                 if global_step % self.policy_update_freq == 0:
@@ -240,7 +250,7 @@ class CrossQSAC_Agent(Base_Agent):
                     self.actor_net_optimizer.step()
 
                     # temperature update
-                    entropy_loss = -(self.log_alpha.exp() * (log_probs + self.target_entropy).detach()).mean()
+                    entropy_loss = -(self.log_alpha.exp() * (log_probs.detach() + self.target_entropy)).mean()
                     self.alpha_optimizer.zero_grad()
                     entropy_loss.backward()
                     self.alpha_optimizer.step()
@@ -255,7 +265,7 @@ class CrossQSAC_Agent(Base_Agent):
                             "log_probs": log_probs,
                             "entropy": -log_probs.mean().item()
                         })
-                print(self.log_alpha.grad)
+                #print(self.log_alpha.grad)
                 # Save the model checkpoint every save_freq training steps
                 if global_step % save_freq == 0 and global_step > 0:
                     self.save(f"model_checkpoint_{global_step}.pt")
@@ -393,8 +403,8 @@ class CrossQTD3_Agent(Base_Agent):
             with torch.no_grad():
                 state = torch.FloatTensor(state).to(self.device)
                 action = self.target_actor(state)#
-                print(action)
-                print(self.action_dim)
+                #print(action)
+                #print(self.action_dim)
                 noise = torch.normal(0.0, self.policy_noise, size=(self.action_dim,)).clamp(-self.noise_clip, self.noise_clip).to(self.device)
                 action = (action + noise).cpu()
                 action = action.clamp(torch.Tensor([-self.max_action]), torch.Tensor([self.max_action])).data.numpy().flatten()

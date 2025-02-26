@@ -90,7 +90,8 @@ class CrossQ_SAC_Actor(BaseActor):
         # Using the change-of-variable formula:
         # p_y(y) = p_x(x) * |dx/dy| => log p_y(y) = log p_x(x) + log |dx/dy|
         # log p_y(y) = log p_x(x) - sum(log(1 - tanh(x)^2))
-        log_prob = normal.log_prob(epsilon) - torch.log(self.action_scale * (1 - squashed_epsilon.pow(2)) + 1e-6)
+        #log_prob = normal.log_prob(epsilon) - torch.log(self.action_scale * (1 - squashed_epsilon.pow(2)) + 1e-6)
+        log_prob = normal.log_prob(epsilon) - torch.log((1 - squashed_epsilon.pow(2)) + 1e-6)
         log_prob = log_prob.sum(1, keepdim=True)
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
 
