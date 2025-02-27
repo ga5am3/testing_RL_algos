@@ -42,10 +42,10 @@ class CrossQ_SAC_Actor(BaseActor):
         self.actor_net = nn.Sequential(
             BatchRenorm(state_dim, momentum=momentum),
             nn.Linear(state_dim, hidden_sizes[0]),
-            nn.ReLU(),
+            nn.ReLU6(),
             BatchRenorm(hidden_sizes[0], momentum=momentum),
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-            nn.ReLU(),
+            nn.ReLU6(),
             BatchRenorm(hidden_sizes[1], momentum=momentum),
         )
 
@@ -110,7 +110,7 @@ class CrossQ_SAC_Actor(BaseActor):
         
         # Scale and shift action
         action = sample * self.action_scale + self.action_bias
-        mean_action = mean * self.action_scale + self.action_bias 
+        mean_action = dist.mean * self.action_scale + self.action_bias 
         
         return action, log_prob, mean_action
     
