@@ -12,26 +12,26 @@ class StableTanhTransform(TanhTransform):
     def atanh(x):
         return 0.5 * (x.log1p() - (-x).log1p())
 
+    def _inverse(self, x):
+        return self.atanh(x)
+
     def __eq__(self, other):
         return isinstance(other, StableTanhTransform)
 
-    def _inverse(self, y):
-        return self.atanh(y)
-
 
 class SquashedNormal(TransformedDistribution):
-    def __init__(self, loc: torch.Tensor, scale: torch.Tensor):
-        self.loc = loc
-        self.scale = scale
-        base_distribution = Normal(loc, scale)
+    def __init__(self, loc: torch.Tensor, std: torch.Tensor):
+        self.loc = loc #can't use mean because of the property
+        self.std = std
+        base_distribution = Normal(loc, std)
         super().__init__(base_distribution, StableTanhTransform(), validate_args=False)
 
     @property
     def mean(self):
-        mu = self.loc
-        for tr in self.transforms:
-            mu = tr(mu)
-        return mu
+        x = self.loc
+        for transform in self.transforms:
+            x = transform(x)
+        return x
 
 
 warmup_function = {
