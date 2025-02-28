@@ -30,9 +30,9 @@ class CrossQSAC_Agent(Base_Agent):
                  env: gym.Env,
                  actor_hidden_layers: list[int] = [512, 512],
                  critic_hidden_layers: list[int] = [512, 512],
-                 actor_lr: float = 0.00001,
-                 critic_lr: float = 0.0008,
-                 alpha_lr: float = 0.001, 
+                 actor_lr: float = 1e-10,
+                 critic_lr: float = 8e-10,
+                 alpha_lr: float = 1e-10, 
                  device: str = None,
                  gamma: float = 0.99,
                  policy_freq: int = 3,
@@ -196,9 +196,9 @@ class CrossQSAC_Agent(Base_Agent):
                 q_values_1, q_values_1_next = torch.chunk(cat_q1, chunks=2, dim=0)
                 q_values_2, q_values_2_next = torch.chunk(cat_q2, chunks=2, dim=0)
                 
-                #print(q_values_1)
+                #print('Q values 1', q_values_1)
                 #print(q_values_1.detach().mean())
-                #print(q_values_2)
+                #print('Q_values 2: ', q_values_2)
                                 
                 target_q_values = (torch.minimum(q_values_1_next, q_values_2_next) - self.log_alpha.exp() * log_probs)
                 # print('Terminations', terminations.shape)
@@ -219,12 +219,14 @@ class CrossQSAC_Agent(Base_Agent):
                 
                 # Compute gradient and do optimizer step logging #! might remove this
                 critic_grad_norm = sum([p.grad.data.norm(2).item() ** 2 for p in self.critic.parameters()]) ** 0.5
+                
+                #print('Critic grad norm: ', critic_grad_norm)
 
                 if self.use_wandb:
                     wandb.log({
-                        "q_values_1": q_values_1.mean().item(),
-                        "q_values_2": q_values_2.mean().item(),
-                        "q_target": q_target.mean().item(),
+                        "q_values_1": q_values_1.mean(),
+                        "q_values_2": q_values_2.mean(),
+                        "q_target": q_target.mean(),
                         "critic_1_loss": q1_loss,
                         "critic_2_loss": q2_loss,
                         "critic_loss": total_q_loss,
@@ -255,6 +257,14 @@ class CrossQSAC_Agent(Base_Agent):
                     entropy_loss.backward()
                     self.alpha_optimizer.step()
 
+                    # print statements for debugging
+                    print(f"Actor Loss: {policy_loss}")
+                    print(f"Entropy Loss: {entropy_loss}")
+                    print(f"Log Alpha: {self.log_alpha}")
+                    print(f"Alpha: {self.log_alpha.exp()}")
+                    print(f"Log Probs: {log_probs}")
+                    print(f"Entropy: {-log_probs.mean().item()}")
+
                     # log actor loss, entropy loss
                     if self.use_wandb:
                         wandb.log({
@@ -265,6 +275,7 @@ class CrossQSAC_Agent(Base_Agent):
                             "log_probs": log_probs,
                             "entropy": -log_probs.mean().item()
                         })
+
                 #print(self.log_alpha.grad)
                 # Save the model checkpoint every save_freq training steps
                 if global_step % save_freq == 0 and global_step > 0:

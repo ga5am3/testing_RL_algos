@@ -59,7 +59,7 @@ class SimpleBuffer():
             
         samples = random.sample(self.memory, k=batch_size)
         states, actions, rewards, next_states, terminals, truncated = zip(*samples)
-        # print('States: ', [s for s in states if len(s) != 3])
+        #print('States: ', [s for s in states if np.isnan(np.stack(s)).any()])
         # print('Actions: ', [a for a in actions if len(a) != 1])
         # print('Rewards: ', [r for r in rewards if len(r) != 1])
         # print('Next States: ', [ns for ns in next_states if len(ns) != 3])
@@ -69,6 +69,9 @@ class SimpleBuffer():
 
     def __len__(self):
         return len(self.memory)
+    
+    def __str__(self):
+        return "\n".join(map(str, self.memory))
     
 class PER_Buffer(SimpleBuffer):
     #TODO Implement the Prioritized Experience Replay Buffer
