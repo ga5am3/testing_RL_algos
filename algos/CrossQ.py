@@ -297,12 +297,12 @@ class CrossQSAC_Agent(Base_Agent):
                     self.alpha_optimizer.step()
 
                     # print statements for debugging
-                    print(f"Actor Loss: {policy_loss}")
-                    print(f"Entropy Loss: {entropy_loss}")
-                    print(f"Log Alpha: {self.log_alpha}")
-                    print(f"Alpha: {self.log_alpha.exp()}")
-                    print(f"Log Probs: {log_probs}")
-                    print(f"Entropy: {-log_probs.mean().item()}")
+                    # print(f"Actor Loss: {policy_loss}")
+                    # print(f"Entropy Loss: {entropy_loss}")
+                    # print(f"Log Alpha: {self.log_alpha}")
+                    # print(f"Alpha: {self.log_alpha.exp()}")
+                    # print(f"Log Probs: {log_probs}")
+                    # print(f"Entropy: {-log_probs.mean().item()}")
 
                     # log actor loss, entropy loss
                     if self.use_wandb:
